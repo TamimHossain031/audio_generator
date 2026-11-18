@@ -100,6 +100,10 @@ function generateSyntheticWavBase64(durationSec = 12, emotion = 'Curious'): stri
   return full.toString('base64');
 }
 
+function cleanElevenLabsApiKey(raw?: string): string {
+  return (raw || '').trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+
 async function generateElevenLabsSpeech({
   apiKey,
   voiceId = 'pNInz6obpgDQGcFmaJgB',
@@ -114,56 +118,82 @@ async function generateElevenLabsSpeech({
   modelId?: string;
   stability?: number;
   similarity?: number;
-}): Promise<string> {
+}): Promise<{ base64: string; mimeType: 'audio/wav' | 'audio/mpeg' }> {
+  const cleanKey = cleanElevenLabsApiKey(apiKey);
   const effectiveVoiceId = voiceId || 'pNInz6obpgDQGcFmaJgB';
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(effectiveVoiceId)}?output_format=pcm_24000`;
+  const payload = JSON.stringify({
+    text: narration,
+    model_id: modelId || 'eleven_multilingual_v2',
+    voice_settings: {
+      stability: typeof stability === 'number' ? stability : 0.5,
+      similarity_boost: typeof similarity === 'number' ? similarity : 0.75,
+      style: 0.35,
+      use_speaker_boost: true,
+    },
+  });
 
-  const response = await fetch(url, {
+  // Try lossless 24kHz PCM first (paid tiers), fall back cleanly to MP3 (Free / Starter tiers)
+  const pcmUrl = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(effectiveVoiceId)}?output_format=pcm_24000`;
+  const pcmResponse = await fetch(pcmUrl, {
     method: 'POST',
     headers: {
-      'xi-api-key': apiKey,
+      'xi-api-key': cleanKey,
       'Content-Type': 'application/json',
       Accept: 'audio/pcm',
     },
-    body: JSON.stringify({
-      text: narration,
-      model_id: modelId || 'eleven_multilingual_v2',
-      voice_settings: {
-        stability: typeof stability === 'number' ? stability : 0.5,
-        similarity_boost: typeof similarity === 'number' ? similarity : 0.75,
-        style: 0.35,
-        use_speaker_boost: true,
-      },
-    }),
+    body: payload,
   });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`ElevenLabs API returned ${response.status}: ${errorBody}`);
+  if (pcmResponse.ok) {
+    const pcmArrayBuffer = await pcmResponse.arrayBuffer();
+    const pcmBuffer = Buffer.from(pcmArrayBuffer);
+
+    const sampleRate = 24000;
+    const header = Buffer.alloc(44);
+    const dataLen = pcmBuffer.byteLength;
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataLen, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(sampleRate * 2, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataLen, 40);
+
+    const fullWav = Buffer.concat([header, pcmBuffer]);
+    return { base64: fullWav.toString('base64'), mimeType: 'audio/wav' };
   }
 
-  const pcmArrayBuffer = await response.arrayBuffer();
-  const pcmBuffer = Buffer.from(pcmArrayBuffer);
+  const pcmErrText = await pcmResponse.text();
 
-  const sampleRate = 24000;
-  const header = Buffer.alloc(44);
-  const dataLen = pcmBuffer.byteLength;
-  header.write('RIFF', 0);
-  header.writeUInt32LE(36 + dataLen, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * 2, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(dataLen, 40);
+  // Retry with MP3 format (supported on ElevenLabs Free Tier & all plans)
+  if (pcmResponse.status === 400 || pcmResponse.status === 401 || pcmResponse.status === 403) {
+    const mp3Url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(effectiveVoiceId)}?output_format=mp3_44100_128`;
+    const mp3Response = await fetch(mp3Url, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': cleanKey,
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg',
+      },
+      body: payload,
+    });
 
-  const fullWav = Buffer.concat([header, pcmBuffer]);
-  return fullWav.toString('base64');
+    if (mp3Response.ok) {
+      const mp3Buffer = Buffer.from(await mp3Response.arrayBuffer());
+      return { base64: mp3Buffer.toString('base64'), mimeType: 'audio/mpeg' };
+    }
+
+    const mp3ErrText = await mp3Response.text();
+    throw new Error(`ElevenLabs API returned ${mp3Response.status}: ${mp3ErrText}`);
+  }
+
+  throw new Error(`ElevenLabs API returned ${pcmResponse.status}: ${pcmErrText}`);
 }
 
 const CURATED_ELEVENLABS_VOICES = [
@@ -224,8 +254,9 @@ export function createApiApp(): express.Express {
   });
 
   router.get('/elevenlabs/voices', async (req, res) => {
-    const apiKey =
-      (req.headers['x-elevenlabs-api-key'] as string) || process.env.ELEVENLABS_API_KEY;
+    const apiKey = cleanElevenLabsApiKey(
+      (req.headers['x-elevenlabs-api-key'] as string) || process.env.ELEVENLABS_API_KEY
+    );
 
     if (!apiKey) {
       res.json({
@@ -288,7 +319,8 @@ export function createApiApp(): express.Express {
       return;
     }
 
-    const cleanKey = key.trim();
+    const cleanKey =
+      provider === 'elevenlabs' ? cleanElevenLabsApiKey(key) : key.trim();
 
     if (provider === 'elevenlabs') {
       try {
@@ -298,21 +330,72 @@ export function createApiApp(): express.Express {
         if (response.ok) {
           const data: any = await response.json();
           const tier = data?.subscription?.tier || 'Free / Starter';
-          const charCount = data?.subscription?.character_count || 0;
-          const charLimit = data?.subscription?.character_limit || 10000;
+          const charCount = data?.subscription?.character_count ?? 0;
+          const charLimit = data?.subscription?.character_limit ?? 10000;
           res.json({
             valid: true,
             provider: 'elevenlabs',
             tier,
             usage: `${charCount} / ${charLimit} characters used`,
+            status: `${tier} (${charCount.toLocaleString()} / ${charLimit.toLocaleString()} chars)`,
           });
-        } else {
-          res.json({
-            valid: false,
-            provider: 'elevenlabs',
-            error: `ElevenLabs key returned HTTP ${response.status}`,
-          });
+          return;
         }
+
+        // Parse ElevenLabs error body so scoped-permission keys (missing user_read) are handled accurately
+        const errBody: any = await response.json().catch(() => ({}));
+        const detailStatus = errBody?.detail?.status || '';
+        const detailMessage = errBody?.detail?.message || '';
+
+        if (detailStatus === 'missing_permissions') {
+          const [voicesRes, modelsRes] = await Promise.all([
+            fetch('https://api.elevenlabs.io/v1/voices', {
+              headers: { 'xi-api-key': cleanKey },
+            }).catch(() => null),
+            fetch('https://api.elevenlabs.io/v1/models', {
+              headers: { 'xi-api-key': cleanKey },
+            }).catch(() => null),
+          ]);
+
+          if (voicesRes?.ok) {
+            res.json({
+              valid: true,
+              provider: 'elevenlabs',
+              tier: 'Scoped Key',
+              status: 'Verified (Scoped Key: Voices & TTS Ready)',
+            });
+            return;
+          }
+          if (modelsRes?.ok) {
+            res.json({
+              valid: true,
+              provider: 'elevenlabs',
+              tier: 'Scoped Key',
+              status: 'Verified (Scoped Key: Models & TTS Ready)',
+            });
+            return;
+          }
+
+          res.json({
+            valid: true,
+            provider: 'elevenlabs',
+            tier: 'Scoped TTS Key',
+            status: 'Key recognized (Scoped: ensure Text-to-Speech access is enabled)',
+          });
+          return;
+        }
+
+        const friendlyError =
+          detailMessage ||
+          (response.status === 401
+            ? 'Invalid or unauthorized ElevenLabs API key (HTTP 401). Please copy the full sk_... key without extra spaces from elevenlabs.io/app/settings/api-keys.'
+            : `ElevenLabs key returned HTTP ${response.status}`);
+
+        res.json({
+          valid: false,
+          provider: 'elevenlabs',
+          error: friendlyError,
+        });
       } catch (err: any) {
         res.json({ valid: false, provider: 'elevenlabs', error: err.message });
       }
@@ -395,23 +478,25 @@ export function createApiApp(): express.Express {
     const sceneNumStr = String(scene).padStart(2, '0');
     const emotionSlug = sanitizeFilename(emotion || 'narration');
     const titleSlug = sceneTitle ? sanitizeFilename(sceneTitle) : `scene_${sceneNumStr}`;
-    const fileName = `scene_${sceneNumStr}_${emotionSlug}_${titleSlug}.wav`;
+    let fileName = `scene_${sceneNumStr}_${emotionSlug}_${titleSlug}.wav`;
 
     let base64Audio: string | undefined = undefined;
+    let audioMimeType: 'audio/wav' | 'audio/mpeg' = 'audio/wav';
     let modelUsed = requestedModel;
     let providerUsed = provider;
     let keyUsedIndex: number | undefined = undefined;
     let autoSwitched = false;
 
     if (provider === 'elevenlabs') {
-      const effectiveElevenLabsKey =
-        (elevenLabsApiKey || '').trim() ||
-        (req.headers['x-elevenlabs-api-key'] as string) ||
-        process.env.ELEVENLABS_API_KEY;
+      const effectiveElevenLabsKey = cleanElevenLabsApiKey(
+        elevenLabsApiKey ||
+          (req.headers['x-elevenlabs-api-key'] as string) ||
+          process.env.ELEVENLABS_API_KEY
+      );
 
       if (effectiveElevenLabsKey) {
         try {
-          base64Audio = await generateElevenLabsSpeech({
+          const result = await generateElevenLabsSpeech({
             apiKey: effectiveElevenLabsKey,
             voiceId: elevenLabsVoiceId,
             narration,
@@ -419,6 +504,11 @@ export function createApiApp(): express.Express {
             stability: elevenLabsStability,
             similarity: elevenLabsSimilarity,
           });
+          base64Audio = result.base64;
+          audioMimeType = result.mimeType;
+          if (audioMimeType === 'audio/mpeg') {
+            fileName = fileName.replace(/\.wav$/i, '.mp3');
+          }
           modelUsed = elevenLabsModel;
           providerUsed = 'elevenlabs';
         } catch {
@@ -488,14 +578,15 @@ export function createApiApp(): express.Express {
     }
 
     if (!base64Audio) {
-      const effectiveElevenLabsKey =
-        (elevenLabsApiKey || '').trim() ||
-        (req.headers['x-elevenlabs-api-key'] as string) ||
-        process.env.ELEVENLABS_API_KEY;
+      const effectiveElevenLabsKey = cleanElevenLabsApiKey(
+        elevenLabsApiKey ||
+          (req.headers['x-elevenlabs-api-key'] as string) ||
+          process.env.ELEVENLABS_API_KEY
+      );
 
       if (effectiveElevenLabsKey) {
         try {
-          base64Audio = await generateElevenLabsSpeech({
+          const result = await generateElevenLabsSpeech({
             apiKey: effectiveElevenLabsKey,
             voiceId: elevenLabsVoiceId,
             narration,
@@ -503,6 +594,11 @@ export function createApiApp(): express.Express {
             stability: elevenLabsStability,
             similarity: elevenLabsSimilarity,
           });
+          base64Audio = result.base64;
+          audioMimeType = result.mimeType;
+          if (audioMimeType === 'audio/mpeg') {
+            fileName = fileName.replace(/\.wav$/i, '.mp3');
+          }
           modelUsed = `${elevenLabsModel} (Failover)`;
           providerUsed = 'elevenlabs';
           autoSwitched = true;
@@ -523,7 +619,7 @@ export function createApiApp(): express.Express {
       success: true,
       scene,
       fileName,
-      mimeType: 'audio/wav',
+      mimeType: audioMimeType,
       audioBase64: base64Audio,
       sampleRate: 24000,
       generatedAt: new Date().toISOString(),

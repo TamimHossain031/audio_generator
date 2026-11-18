@@ -79,9 +79,12 @@ export const ApiKeysModal: React.FC<Props> = ({
     }
   }, [isOpen, apiKeySettings, voiceConfig]);
 
+  const sanitizeKeyInput = (raw: string) =>
+    raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
   const loadVoices = async (keyOverride?: string) => {
     setIsLoadingVoices(true);
-    const activeKey = (keyOverride ?? elevenLabsKey).trim();
+    const activeKey = sanitizeKeyInput(keyOverride ?? elevenLabsKey);
     try {
       const res = await fetch('/api/elevenlabs/voices', {
         headers: activeKey ? { 'x-elevenlabs-api-key': activeKey } : {},
@@ -122,11 +125,13 @@ export const ApiKeysModal: React.FC<Props> = ({
       [id]: { checking: true },
     }));
 
+    const cleanKey = provider === 'elevenlabs' ? sanitizeKeyInput(key) : key.trim();
+
     try {
       const res = await fetch('/api/keys/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, key }),
+        body: JSON.stringify({ provider, key: cleanKey }),
       });
       const rawText = await res.text();
       let data: any = {};
@@ -151,6 +156,9 @@ export const ApiKeysModal: React.FC<Props> = ({
             status: data.status || data.tier || 'Verified Active',
           },
         }));
+        if (provider === 'elevenlabs') {
+          void loadVoices(cleanKey);
+        }
       } else {
         setValidationStatus((prev) => ({
           ...prev,
@@ -195,7 +203,7 @@ export const ApiKeysModal: React.FC<Props> = ({
 
     const updatedApiSettings: ApiKeySettings = {
       googleApiKeys: googleKeys,
-      elevenLabsApiKey: elevenLabsKey.trim(),
+      elevenLabsApiKey: sanitizeKeyInput(elevenLabsKey),
       autoRotateGoogleKeys: true,
     };
 
@@ -543,9 +551,18 @@ export const ApiKeysModal: React.FC<Props> = ({
                   <input
                     type={showElevenKey ? 'text' : 'password'}
                     value={elevenLabsKey}
-                    onChange={(e) => setElevenLabsKey(e.target.value)}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/["'\s]+/g, '');
+                      setElevenLabsKey(cleaned);
+                      setValidationStatus((prev) => {
+                        if (!prev['eleven_main']) return prev;
+                        const next = { ...prev };
+                        delete next['eleven_main'];
+                        return next;
+                      });
+                    }}
                     placeholder="sk_..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-20 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 pr-24 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                   />
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                     <button
@@ -558,10 +575,10 @@ export const ApiKeysModal: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={() => handleValidateKey('elevenlabs', elevenLabsKey, 'eleven_main')}
-                      disabled={!elevenLabsKey.trim()}
+                      disabled={!elevenLabsKey.trim() || validationStatus['eleven_main']?.checking}
                       className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium transition disabled:opacity-40"
                     >
-                      Verify
+                      {validationStatus['eleven_main']?.checking ? 'Checking...' : 'Verify'}
                     </button>
                   </div>
                 </div>

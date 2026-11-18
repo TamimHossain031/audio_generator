@@ -76,5 +76,6 @@ export interface SceneAudioState {
   modelUsed?: string;
   providerUsed?: TtsProvider | 'auto-fallback';
   keyUsedIndex?: number;
+  mimeType?: string;
   error?: string;
 }

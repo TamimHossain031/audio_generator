@@ -167,9 +167,13 @@ export default function App() {
         }));
       }
 
-      const audioBlobUrl = createWavBlobUrl(data.audioBase64);
+      const audioMimeType = data.mimeType || 'audio/wav';
+      const audioBlobUrl = createWavBlobUrl(data.audioBase64, audioMimeType);
       const binaryLength = window.atob(data.audioBase64).length;
-      const estimatedSecs = Math.max(1, Math.round((binaryLength - 44) / 48000));
+      const estimatedSecs =
+        audioMimeType === 'audio/mpeg'
+          ? Math.max(1, Math.round(binaryLength / 16000))
+          : Math.max(1, Math.round((binaryLength - 44) / 48000));
 
       setAudioStates((prev) => ({
         ...prev,
@@ -183,6 +187,7 @@ export default function App() {
           modelUsed: data.modelUsed,
           providerUsed: data.providerUsed,
           keyUsedIndex: data.keyUsedIndex,
+          mimeType: audioMimeType,
         },
       }));
 
@@ -312,17 +317,35 @@ export default function App() {
 
   // Merge all scenes into one continuous audio track
   const handleDownloadMerged = () => {
-    const readyBase64 = scenes
-      .map((s) => audioStates[s.scene]?.audioBase64)
-      .filter((b): b is string => Boolean(b));
+    const readyStates = scenes
+      .map((s) => audioStates[s.scene])
+      .filter((st): st is SceneAudioState => Boolean(st?.audioBase64));
 
-    if (readyBase64.length === 0) {
+    if (readyStates.length === 0) {
       showToast('Please generate at least one scene voiceover first.');
       return;
     }
 
-    const mergedBlob = mergeWavAudio(readyBase64);
     const cleanSlug = projectTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const allMp3 = readyStates.every((st) => st.mimeType === 'audio/mpeg');
+    if (allMp3) {
+      const mp3Parts = readyStates.map((st) => {
+        const binary = window.atob(st.audioBase64!);
+        const arr = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+        return arr;
+      });
+      const mergedBlob = new Blob(mp3Parts, { type: 'audio/mpeg' });
+      downloadBlob(mergedBlob, `${cleanSlug}_full_voiceover.mp3`);
+      showToast('Downloaded complete merged MP3 narration track!');
+      return;
+    }
+
+    const readyWavBase64 = readyStates
+      .filter((st) => st.mimeType !== 'audio/mpeg')
+      .map((st) => st.audioBase64!);
+
+    const mergedBlob = mergeWavAudio(readyWavBase64);
     downloadBlob(mergedBlob, `${cleanSlug}_full_voiceover.wav`);
     showToast('Downloaded complete merged narration track!');
   };

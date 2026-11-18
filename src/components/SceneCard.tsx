@@ -100,7 +100,9 @@ export const SceneCard: React.FC<Props> = ({
   const handleDownload = () => {
     if (!audioState?.audioBase64) return;
     const bytes = base64ToUint8Array(audioState.audioBase64);
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/wav' });
+    const blob = new Blob([bytes.buffer as ArrayBuffer], {
+      type: audioState.mimeType || 'audio/wav',
+    });
     downloadBlob(blob, effectiveFileName);
   };
 
@@ -259,7 +261,11 @@ export const SceneCard: React.FC<Props> = ({
           {isReady ? (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Generated (24kHz Mono WAV)</span>
+              <span>
+                {audioState?.mimeType === 'audio/mpeg'
+                  ? 'Generated (MP3 128kbps)'
+                  : 'Generated (24kHz Mono WAV)'}
+              </span>
               {audioState?.modelUsed && (
                 <span className="text-[10px] text-slate-400 font-mono px-2 py-0.5 rounded bg-slate-800 border border-slate-700 flex items-center gap-1">
                   <span>{audioState.modelUsed}</span>

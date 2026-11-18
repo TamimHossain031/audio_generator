@@ -17,9 +17,9 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 /**
  * Creates an object URL for a base64 WAV audio string
  */
-export function createWavBlobUrl(base64: string): string {
+export function createWavBlobUrl(base64: string, mimeType = 'audio/wav'): string {
   const bytes = base64ToUint8Array(base64);
-  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/wav' });
+  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mimeType });
   return URL.createObjectURL(blob);
 }
 
@@ -197,20 +197,22 @@ export async function downloadAllScenesAsZip(
   const zip = new JSZip();
   const folder = zip.folder('bangla_ai_voiceover_scenes') || zip;
 
-  const validBase64List: string[] = [];
+  const validWavBase64List: string[] = [];
 
   scenes.forEach((scene) => {
     const state = audioStates[scene.scene];
     if (state?.audioBase64) {
       const bytes = base64ToUint8Array(state.audioBase64);
       folder.file(state.fileName || scene.fileName, bytes);
-      validBase64List.push(state.audioBase64);
+      if (state.mimeType !== 'audio/mpeg') {
+        validWavBase64List.push(state.audioBase64);
+      }
     }
   });
 
-  // Also include merged full narration if multiple audio clips exist
-  if (validBase64List.length > 1) {
-    const mergedBlob = mergeWavAudio(validBase64List);
+  // Also include merged full narration if multiple WAV clips exist
+  if (validWavBase64List.length > 1) {
+    const mergedBlob = mergeWavAudio(validWavBase64List);
     const mergedBuffer = await mergedBlob.arrayBuffer();
     folder.file('full_narration_merged_all_scenes.wav', mergedBuffer);
   }
