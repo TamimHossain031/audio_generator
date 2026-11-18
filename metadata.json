@@ -1,0 +1,6 @@
+{
+  "name": "Bangla AI Voice Studio - What is AI?",
+  "description": "Professional scene-by-scene Bangla AI voiceover studio powered by Gemini 3.8 Flash TTS for educational video production.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
