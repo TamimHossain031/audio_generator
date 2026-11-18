@@ -1,12 +1,12 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createApiApp } from './api/_app';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = createApiApp();
+const app = express();
 const portArgIdx = process.argv.indexOf('--port');
 const cliPort =
   portArgIdx !== -1 && process.argv[portArgIdx + 1]
@@ -17,6 +17,40 @@ const PORT = !Number.isNaN(cliPort)
   : process.env.PORT
     ? parseInt(process.env.PORT, 10)
     : 3000;
+
+// Lazily mount the API Express app so port 3000 binds instantaneously on cold start
+let apiAppInstance: express.Express | null = null;
+let apiAppPromise: Promise<void> | null = null;
+
+function ensureApiApp(): Promise<void> {
+  if (!apiAppPromise) {
+    apiAppPromise = import('./api/index')
+      .then(({ createApiApp }) => {
+        apiAppInstance = createApiApp();
+      })
+      .catch((err) => {
+        console.error('Failed to initialize API router:', err);
+        process.exit(1);
+      });
+  }
+  return apiAppPromise;
+}
+
+app.use('/api', async (req, res, next) => {
+  try {
+    if (!apiAppInstance) {
+      await ensureApiApp();
+    }
+    if (apiAppInstance) {
+      // Restore full '/api/...' URL before passing to apiAppInstance mounted on '/api'
+      req.url = req.originalUrl;
+      return apiAppInstance(req, res, next);
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Setup Vite middleware in dev or static server in prod
 async function startServer() {
@@ -60,6 +94,7 @@ async function startServer() {
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Bangla AI Voice Studio server running on http://0.0.0.0:${PORT}`);
+      void ensureApiApp();
       if (!viteReady && initVite) {
         viteReady = initVite();
       }
@@ -73,6 +108,7 @@ async function startServer() {
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Bangla AI Voice Studio server running on http://0.0.0.0:${PORT}`);
+      void ensureApiApp();
     });
   }
 }
