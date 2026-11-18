@@ -107,8 +107,22 @@ export const ApiKeysModal: React.FC<Props> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, key }),
       });
-      const data = await res.json();
-      if (data.valid) {
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        setValidationStatus((prev) => ({
+          ...prev,
+          [id]: {
+            checking: false,
+            error: `HTTP ${res.status}: ${rawText.slice(0, 100) || 'Invalid server response'}`,
+          },
+        }));
+        return;
+      }
+
+      if (res.ok && data.valid) {
         setValidationStatus((prev) => ({
           ...prev,
           [id]: {
@@ -121,7 +135,7 @@ export const ApiKeysModal: React.FC<Props> = ({
           ...prev,
           [id]: {
             checking: false,
-            error: data.error || 'Invalid API Key',
+            error: data.error || `Validation failed (HTTP ${res.status})`,
           },
         }));
       }
