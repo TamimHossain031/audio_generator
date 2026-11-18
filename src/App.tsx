@@ -73,8 +73,12 @@ export default function App() {
     } catch {
       // Ignore
     }
+    const activeVoiceLabel =
+      newVoiceConfig.provider === 'elevenlabs'
+        ? newVoiceConfig.elevenLabsVoiceName || 'ElevenLabs Voice'
+        : newVoiceConfig.voiceName || 'Fenrir';
     showToast(
-      `Saved settings! Engine: ${newVoiceConfig.provider === 'elevenlabs' ? 'ElevenLabs' : 'Google Gemini'}`
+      `Saved! Engine: ${newVoiceConfig.provider === 'elevenlabs' ? 'ElevenLabs' : 'Google Gemini'} (${activeVoiceLabel})`
     );
   };
 
@@ -556,8 +560,12 @@ export default function App() {
         config={voiceConfig}
         onSave={(newConfig) => {
           setVoiceConfig(newConfig);
+          const activeVoiceLabel =
+            newConfig.provider === 'elevenlabs'
+              ? newConfig.elevenLabsVoiceName || 'ElevenLabs Voice'
+              : newConfig.voiceName || 'Fenrir';
           showToast(
-            `Engine set to ${newConfig.provider === 'elevenlabs' ? 'ElevenLabs' : 'Google Gemini'} (${newConfig.voiceName})`
+            `Engine set to ${newConfig.provider === 'elevenlabs' ? 'ElevenLabs' : 'Google Gemini'} (${activeVoiceLabel})`
           );
         }}
       />

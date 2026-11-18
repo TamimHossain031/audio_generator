@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { X, Mic, Volume2, CheckCircle2, Sliders, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Mic, CheckCircle2, Sliders, Info, Search } from 'lucide-react';
 import { VoiceConfig } from '../types';
+import { CURATED_ELEVENLABS_VOICES } from '../data/elevenLabsVoices';
+import { CURATED_GEMINI_VOICES } from '../data/geminiVoices';
 
 interface Props {
   isOpen: boolean;
@@ -9,39 +11,6 @@ interface Props {
   onSave: (newConfig: VoiceConfig) => void;
 }
 
-const PREBUILT_VOICES = [
-  {
-    name: 'Fenrir',
-    gender: 'Male',
-    style: 'Deep, confident, authoritative educator',
-    recommended: true,
-  },
-  {
-    name: 'Puck',
-    gender: 'Male',
-    style: 'Energetic, friendly, crisp & bright',
-    recommended: false,
-  },
-  {
-    name: 'Charon',
-    gender: 'Male',
-    style: 'Calm, deep, analytical technical lecturer',
-    recommended: false,
-  },
-  {
-    name: 'Kore',
-    gender: 'Female',
-    style: 'Smooth, educational, articulate presenter',
-    recommended: false,
-  },
-  {
-    name: 'Zephyr',
-    gender: 'Female',
-    style: 'Warm, dynamic, engaging instructor',
-    recommended: false,
-  },
-];
-
 export const VoiceSettingsModal: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -49,6 +18,16 @@ export const VoiceSettingsModal: React.FC<Props> = ({
   onSave,
 }) => {
   const [formData, setFormData] = useState<VoiceConfig>(config);
+  const [voiceSearch, setVoiceSearch] = useState('');
+  const [voiceFilter, setVoiceFilter] = useState<'all' | 'male' | 'female'>('all');
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(config);
+      setVoiceSearch('');
+      setVoiceFilter('all');
+    }
+  }, [isOpen, config]);
 
   if (!isOpen) return null;
 
@@ -72,7 +51,10 @@ export const VoiceSettingsModal: React.FC<Props> = ({
                 Voice & Narration Settings
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Model: gemini-3.8-flash-tts
+                Model:{' '}
+                {formData.provider === 'elevenlabs'
+                  ? formData.elevenLabsModel || 'eleven_multilingual_v2'
+                  : formData.ttsModel || 'gemini-3.8-flash-tts'}
               </p>
             </div>
           </div>
@@ -219,50 +201,214 @@ export const VoiceSettingsModal: React.FC<Props> = ({
 
           {/* Prebuilt Voice Selection */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-              Select Voice Persona
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {PREBUILT_VOICES.map((v) => {
-                const isSelected = formData.voiceName === v.name;
-                return (
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                {formData.provider === 'elevenlabs'
+                  ? `Select ElevenLabs Voice (${CURATED_ELEVENLABS_VOICES.length} Presets)`
+                  : `Select Gemini Voice (${CURATED_GEMINI_VOICES.length} Studio Voices)`}
+              </label>
+              <span className="text-[11px] font-mono text-cyan-400">
+                {formData.provider === 'elevenlabs'
+                  ? formData.elevenLabsVoiceName || 'Adam'
+                  : formData.voiceName || 'Fenrir'}
+              </span>
+            </div>
+
+            {/* Search & Gender Filter */}
+            <div className="flex flex-col sm:flex-row gap-2 mb-2.5">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={voiceSearch}
+                  onChange={(e) => setVoiceSearch(e.target.value)}
+                  placeholder="Search voice name, tone, or style..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 shrink-0">
+                {(['all', 'male', 'female'] as const).map((g) => (
                   <button
-                    key={v.name}
+                    key={g}
                     type="button"
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        voiceName: v.name,
-                        gender: v.gender as 'Male' | 'Female',
-                      })
-                    }
-                    className={`text-left p-3 rounded-xl border transition-all ${
-                      isSelected
-                        ? 'bg-indigo-600/15 border-indigo-500 ring-1 ring-indigo-500 shadow-md'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
+                    onClick={() => setVoiceFilter(g)}
+                    className={`px-2.5 py-1 rounded text-[11px] font-semibold capitalize transition ${
+                      voiceFilter === g
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <Mic className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="font-semibold text-sm text-slate-100 font-mono">
-                          {v.name}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-                          {v.gender}
-                        </span>
-                      </div>
-                      {v.recommended && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          Recommended
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-400">{v.style}</p>
+                    {g}
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
+
+            {formData.provider === 'elevenlabs' ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1.5 border border-slate-800 rounded-xl bg-slate-950/40">
+                  {CURATED_ELEVENLABS_VOICES.filter((v) => {
+                    const g = (v.labels.gender || '').toLowerCase();
+                    if (voiceFilter !== 'all' && g !== voiceFilter) return false;
+                    if (voiceSearch.trim()) {
+                      const q = voiceSearch.toLowerCase();
+                      const match =
+                        v.name.toLowerCase().includes(q) ||
+                        v.description.toLowerCase().includes(q) ||
+                        (v.labels.accent || '').toLowerCase().includes(q);
+                      if (!match) return false;
+                    }
+                    return true;
+                  }).map((v) => {
+                    const isSelected =
+                      (formData.elevenLabsVoiceId || 'pNInz6obpgDQGcFmaJgB') === v.voice_id;
+                    return (
+                      <button
+                        key={v.voice_id}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            elevenLabsVoiceId: v.voice_id,
+                            elevenLabsVoiceName: v.name,
+                            gender: v.labels.gender === 'female' ? 'Female' : 'Male',
+                          })
+                        }
+                        className={`text-left p-2.5 rounded-xl border transition-all ${
+                          isSelected
+                            ? 'bg-indigo-600/15 border-indigo-500 ring-1 ring-indigo-500 shadow-md'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Mic className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span className="font-semibold text-xs text-slate-100 truncate">
+                              {v.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {v.labels.accent && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-300">
+                                {v.labels.accent}
+                              </span>
+                            )}
+                            {v.labels.gender && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 capitalize">
+                                {v.labels.gender}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 line-clamp-1">{v.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Stability & Similarity Sliders */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                      <span>Stability</span>
+                      <span className="font-mono text-cyan-400">
+                        {(formData.elevenLabsStability ?? 0.5).toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={formData.elevenLabsStability ?? 0.5}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          elevenLabsStability: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full accent-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                      <span>Similarity Boost</span>
+                      <span className="font-mono text-cyan-400">
+                        {(formData.elevenLabsSimilarity ?? 0.75).toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={formData.elevenLabsSimilarity ?? 0.75}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          elevenLabsSimilarity: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-full accent-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1.5 border border-slate-800 rounded-xl bg-slate-950/40">
+                {CURATED_GEMINI_VOICES.filter((v) => {
+                  const g = v.gender.toLowerCase();
+                  if (voiceFilter !== 'all' && g !== voiceFilter) return false;
+                  if (voiceSearch.trim()) {
+                    const q = voiceSearch.toLowerCase();
+                    const match =
+                      v.name.toLowerCase().includes(q) ||
+                      v.toneTag.toLowerCase().includes(q) ||
+                      v.style.toLowerCase().includes(q);
+                    if (!match) return false;
+                  }
+                  return true;
+                }).map((v) => {
+                  const isSelected = formData.voiceName === v.name;
+                  return (
+                    <button
+                      key={v.name}
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          voiceName: v.name,
+                          gender: v.gender,
+                        })
+                      }
+                      className={`text-left p-2.5 rounded-xl border transition-all ${
+                        isSelected
+                          ? 'bg-indigo-600/15 border-indigo-500 ring-1 ring-indigo-500 shadow-md'
+                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Mic className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="font-semibold text-xs text-slate-100 font-mono truncate">
+                            {v.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-300">
+                            {v.toneTag}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                            {v.gender}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-400 line-clamp-1">{v.style}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Tone & Style */}
