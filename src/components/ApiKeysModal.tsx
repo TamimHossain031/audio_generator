@@ -16,10 +16,12 @@ import {
   Check,
   Search,
   Mic,
+  Play,
 } from 'lucide-react';
 import { ApiKeySettings, VoiceConfig, TtsProvider } from '../types';
 import { CURATED_ELEVENLABS_VOICES } from '../data/elevenLabsVoices';
 import { CURATED_GEMINI_VOICES } from '../data/geminiVoices';
+import { createWavBlobUrl } from '../utils/wavHelper';
 
 interface Props {
   isOpen: boolean;
@@ -61,6 +63,8 @@ export const ApiKeysModal: React.FC<Props> = ({
   );
   const [geminiVoiceFilter, setGeminiVoiceFilter] = useState<'all' | 'male' | 'female'>('all');
   const [geminiVoiceSearch, setGeminiVoiceSearch] = useState('');
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [voiceTestMessage, setVoiceTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -75,12 +79,65 @@ export const ApiKeysModal: React.FC<Props> = ({
       setSelectedGeminiVoiceName(voiceConfig.voiceName || 'Fenrir');
       setGeminiVoiceFilter('all');
       setGeminiVoiceSearch('');
+      setVoiceTestMessage(null);
       loadVoices(apiKeySettings.elevenLabsApiKey || '');
     }
   }, [isOpen, apiKeySettings, voiceConfig]);
 
   const sanitizeKeyInput = (raw: string) =>
     raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+
+  const handleTestElevenLabsVoice = async () => {
+    const activeKey = sanitizeKeyInput(elevenLabsKey);
+    const targetVoiceId = customVoiceId.trim() || selectedElevenVoiceId;
+    if (!activeKey) {
+      setVoiceTestMessage({ ok: false, text: 'Enter your ElevenLabs API key first.' });
+      return;
+    }
+    setIsTestingVoice(true);
+    setVoiceTestMessage(null);
+    try {
+      const res = await fetch('/api/tts/generate-scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scene: 1,
+          narration: 'হ্যালো! আমি ইলেভেনল্যাবস থেকে আপনার সিলেক্ট করা ভয়েস টেস্ট করছি।',
+          provider: 'elevenlabs',
+          elevenLabsApiKey: activeKey,
+          elevenLabsModel: selectedElevenModel,
+          elevenLabsVoiceId: targetVoiceId,
+          elevenLabsStability: voiceConfig.elevenLabsStability ?? 0.5,
+          elevenLabsSimilarity: voiceConfig.elevenLabsSimilarity ?? 0.75,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || !data.audioBase64) {
+        setVoiceTestMessage({
+          ok: false,
+          text: data.error || `Voice test failed (HTTP ${res.status}).`,
+        });
+        return;
+      }
+      const blobUrl = createWavBlobUrl(data.audioBase64, data.mimeType || 'audio/wav');
+      const audio = new Audio(blobUrl);
+      audio.onended = () => URL.revokeObjectURL(blobUrl);
+      await audio.play().catch(() => {});
+      const vName =
+        fetchedVoices.find((v) => v.voice_id === targetVoiceId)?.name || 'Selected Voice';
+      setVoiceTestMessage({
+        ok: true,
+        text: `Playing sample with ${vName} (${selectedElevenModel})`,
+      });
+    } catch (err: any) {
+      setVoiceTestMessage({
+        ok: false,
+        text: err?.message || 'Failed to test ElevenLabs voice.',
+      });
+    } finally {
+      setIsTestingVoice(false);
+    }
+  };
 
   const loadVoices = async (keyOverride?: string) => {
     setIsLoadingVoices(true);
@@ -647,20 +704,48 @@ export const ApiKeysModal: React.FC<Props> = ({
 
               {/* ElevenLabs Voice Selection */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 gap-2">
                   <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                     Select Voice ({fetchedVoices.length} Available)
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => loadVoices()}
-                    disabled={isLoadingVoices}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
-                    <span>Refresh Voices</span>
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleTestElevenLabsVoice}
+                      disabled={isTestingVoice || !elevenLabsKey.trim()}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 transition disabled:opacity-40"
+                    >
+                      <Play className="w-3 h-3" />
+                      <span>{isTestingVoice ? 'Testing...' : 'Test Voice'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadVoices()}
+                      disabled={isLoadingVoices}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />
+                      <span>Refresh Voices</span>
+                    </button>
+                  </div>
                 </div>
+
+                {voiceTestMessage && (
+                  <p
+                    className={`text-[11px] mb-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
+                      voiceTestMessage.ok
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                    }`}
+                  >
+                    {voiceTestMessage.ok ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>{voiceTestMessage.text}</span>
+                  </p>
+                )}
 
                 {/* Search & Gender Filter */}
                 <div className="flex flex-col sm:flex-row gap-2 mb-2.5">
@@ -709,6 +794,11 @@ export const ApiKeysModal: React.FC<Props> = ({
                     })
                     .map((voice) => {
                       const isSelected = selectedElevenVoiceId === voice.voice_id;
+                      const isPaidOnly = Boolean(
+                        voice.requiresPaidPlan ||
+                          voice.category === 'professional' ||
+                          voice.category === 'high_quality'
+                      );
                       return (
                         <button
                           key={voice.voice_id}
@@ -716,6 +806,7 @@ export const ApiKeysModal: React.FC<Props> = ({
                           onClick={() => {
                             setSelectedElevenVoiceId(voice.voice_id);
                             setCustomVoiceId('');
+                            setVoiceTestMessage(null);
                           }}
                           className={`text-left p-2.5 rounded-lg border transition ${
                             isSelected
@@ -728,9 +819,13 @@ export const ApiKeysModal: React.FC<Props> = ({
                               {voice.name}
                             </span>
                             <div className="flex items-center gap-1 shrink-0">
-                              {voice.labels?.accent && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-300">
-                                  {voice.labels.accent}
+                              {isPaidOnly ? (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  Paid
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300">
+                                  Free OK
                                 </span>
                               )}
                               {voice.labels?.gender && (
@@ -740,7 +835,10 @@ export const ApiKeysModal: React.FC<Props> = ({
                               )}
                             </div>
                           </div>
-                          <p className="text-[11px] text-slate-400 line-clamp-1">{voice.description}</p>
+                          <p className="text-[11px] text-slate-400 line-clamp-1">
+                            {voice.labels?.accent ? `${voice.labels.accent} • ` : ''}
+                            {voice.description}
+                          </p>
                         </button>
                       );
                     })}

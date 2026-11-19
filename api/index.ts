@@ -190,39 +190,54 @@ async function generateElevenLabsSpeech({
     }
 
     const mp3ErrText = await mp3Response.text();
-    throw new Error(`ElevenLabs API returned ${mp3Response.status}: ${mp3ErrText}`);
+    const err: any = new Error(extractElevenLabsError(mp3Response.status, mp3ErrText));
+    err.status = mp3Response.status;
+    throw err;
   }
 
-  throw new Error(`ElevenLabs API returned ${pcmResponse.status}: ${pcmErrText}`);
+  const err: any = new Error(extractElevenLabsError(pcmResponse.status, pcmErrText));
+  err.status = pcmResponse.status;
+  throw err;
+}
+
+function extractElevenLabsError(status: number, bodyText: string): string {
+  try {
+    const parsed = JSON.parse(bodyText);
+    const code = parsed?.detail?.code || parsed?.detail?.status || '';
+    const msg = parsed?.detail?.message || parsed?.message || '';
+    if (code === 'paid_plan_required' || status === 402) {
+      return 'This voice is a Paid Library voice (HTTP 402). Please select any "Free OK" premade voice (e.g., Adam, Alice, Sarah, George, Liam, Brian, Bella, Matilda, Daniel, Lily) for Free Tier API.';
+    }
+    if (msg) return `ElevenLabs (${status}): ${msg}`;
+  } catch {
+    // Plain text body
+  }
+  return `ElevenLabs API returned HTTP ${status}: ${bodyText.slice(0, 180)}`;
 }
 
 const CURATED_ELEVENLABS_VOICES = [
-  { voice_id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', category: 'premade', description: 'Deep, warm, natural narrator (Excellent for tech education)', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade', description: 'Calm, articulate, professional presenter', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', category: 'premade', description: 'Clear, crisp, educational tone', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh', category: 'premade', description: 'Young, energetic, engaging tech speaker', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', category: 'premade', description: 'Authoritative, resonant, university lecturer', labels: { accent: 'British', gender: 'male' } },
-  { voice_id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', category: 'premade', description: 'Articulate, modern, podcast style', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', category: 'premade', description: 'Warm, engaging, audio-guide educator', labels: { accent: 'Swedish', gender: 'female' } },
-  { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', category: 'premade', description: 'Soft, confident, clear conversational news & tutorial voice', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', category: 'premade', description: 'Upbeat, expressive, bright social explainer', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', category: 'premade', description: 'Authoritative British broadcaster & documentary host', labels: { accent: 'British', gender: 'male' } },
-  { voice_id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', category: 'premade', description: 'Deep, comforting, studio-quality documentary narrator', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', category: 'premade', description: 'Friendly, trustworthy corporate & software educator', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'iP95p4xoKVk53GoZ742B', name: 'Chris', category: 'premade', description: 'Casual, natural, easy-to-follow tech explainer', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', category: 'premade', description: 'Expressive, warm, modern tutorial & course host', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda', category: 'premade', description: 'Warm, engaging audiobook & lesson narrator', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', category: 'premade', description: 'Warm, velvety British storytelling voice', labels: { accent: 'British', gender: 'female' } },
-  { voice_id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', category: 'premade', description: 'Natural Australian conversational storyteller', labels: { accent: 'Australian', gender: 'male' } },
-  { voice_id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', category: 'premade', description: 'Intense, clear, transatlantic character & tech narrator', labels: { accent: 'Transatlantic', gender: 'male' } },
-  { voice_id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger', category: 'premade', description: 'Confident, poised, mature presenter', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'bIHbv24MWmeRgasZH58o', name: 'Will', category: 'premade', description: 'Friendly, youthful, enthusiastic creator voice', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', category: 'premade', description: 'Trustworthy, seasoned documentary narrator', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'SAz9YHcvj6GT2YYXdXww', name: 'River', category: 'premade', description: 'Calm, confident, neutral informational voice', labels: { accent: 'American', gender: 'non-binary' } },
-  { voice_id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', category: 'premade', description: 'Strong, assertive, high-clarity presenter', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'MF3mGyEYCl7XYWbV9V6O', name: 'Elli', category: 'premade', description: 'Emotional, youthful, expressive storytelling voice', labels: { accent: 'American', gender: 'female' } },
-  { voice_id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', category: 'premade', description: 'Crisp, resonant, authoritative explainer', labels: { accent: 'American', gender: 'male' } },
-  { voice_id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam', category: 'premade', description: 'Authentic, grounded, warm raspy narrator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', category: 'premade', description: 'Deep, warm, dominant narrator (Excellent for tech education)', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', category: 'premade', description: 'Clear, crisp, balanced educational tone', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', category: 'premade', description: 'Clear, engaging British educator & explainer', labels: { accent: 'British', gender: 'female' } },
+  { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', category: 'premade', description: 'Mature, reassuring, confident news & tutorial presenter', labels: { accent: 'American', gender: 'female' } },
+  { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', category: 'premade', description: 'Warm, captivating British storyteller & lecturer', labels: { accent: 'British', gender: 'male' } },
+  { voice_id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', category: 'premade', description: 'Energetic, articulate, modern social media creator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'hpp4J3VqNfWAUOO0d1Us', name: 'Bella', category: 'premade', description: 'Professional, bright, warm presenter', labels: { accent: 'American', gender: 'female' } },
+  { voice_id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', category: 'premade', description: 'Enthusiastic, expressive, bright social explainer', labels: { accent: 'American', gender: 'female' } },
+  { voice_id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', category: 'premade', description: 'Steady, authoritative British broadcaster & documentary host', labels: { accent: 'British', gender: 'male' } },
+  { voice_id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', category: 'premade', description: 'Deep, resonant, comforting studio documentary narrator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', category: 'premade', description: 'Smooth, trustworthy corporate & software educator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'iP95p4xoKVk53GoZ742B', name: 'Chris', category: 'premade', description: 'Charming, down-to-earth, easy-to-follow tech explainer', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', category: 'premade', description: 'Playful, bright, warm tutorial & course host', labels: { accent: 'American', gender: 'female' } },
+  { voice_id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda', category: 'premade', description: 'Knowledgeable, professional lesson & audiobook narrator', labels: { accent: 'American', gender: 'female' } },
+  { voice_id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', category: 'premade', description: 'Velvety, expressive British storytelling voice', labels: { accent: 'British', gender: 'female' } },
+  { voice_id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', category: 'premade', description: 'Deep, confident, energetic Australian storyteller', labels: { accent: 'Australian', gender: 'male' } },
+  { voice_id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', category: 'premade', description: 'Husky, crisp, character & tech narrator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger', category: 'premade', description: 'Laid-back, casual, resonant presenter', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'bIHbv24MWmeRgasZH58o', name: 'Will', category: 'premade', description: 'Relaxed, optimistic, friendly creator voice', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', category: 'premade', description: 'Wise, mature, balanced documentary narrator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'SOYHLrjzK2X1ezoPC6cr', name: 'Harry', category: 'premade', description: 'Bold, intense, high-impact dramatic narrator', labels: { accent: 'American', gender: 'male' } },
+  { voice_id: 'SAz9YHcvj6GT2YYXdXww', name: 'River', category: 'premade', description: 'Relaxed, neutral, calm informational voice', labels: { accent: 'American', gender: 'neutral' } },
 ];
 
 export function createApiApp(): express.Express {
@@ -286,14 +301,18 @@ export function createApiApp(): express.Express {
 
       const data: any = await response.json();
       const fetchedVoices = Array.isArray(data?.voices)
-        ? data.voices.map((v: any) => ({
-            voice_id: v.voice_id,
-            name: v.name,
-            category: v.category,
-            description: v.description || v.labels?.description || 'Custom voice',
-            labels: v.labels || {},
-            preview_url: v.preview_url,
-          }))
+        ? data.voices
+            .map((v: any) => ({
+              voice_id: v.voice_id,
+              name: v.name,
+              category: v.category || 'premade',
+              description: v.description || v.labels?.description || 'ElevenLabs voice',
+              labels: v.labels || {},
+              preview_url: v.preview_url,
+              requiresPaidPlan:
+                v.category === 'professional' || v.category === 'high_quality',
+            }))
+            .sort((a: any, b: any) => Number(Boolean(a.requiresPaidPlan)) - Number(Boolean(b.requiresPaidPlan)))
         : CURATED_ELEVENLABS_VOICES;
 
       res.json({
@@ -494,26 +513,43 @@ export function createApiApp(): express.Express {
           process.env.ELEVENLABS_API_KEY
       );
 
-      if (effectiveElevenLabsKey) {
-        try {
-          const result = await generateElevenLabsSpeech({
-            apiKey: effectiveElevenLabsKey,
-            voiceId: elevenLabsVoiceId,
-            narration,
-            modelId: elevenLabsModel,
-            stability: elevenLabsStability,
-            similarity: elevenLabsSimilarity,
-          });
-          base64Audio = result.base64;
-          audioMimeType = result.mimeType;
-          if (audioMimeType === 'audio/mpeg') {
-            fileName = fileName.replace(/\.wav$/i, '.mp3');
-          }
-          modelUsed = elevenLabsModel;
-          providerUsed = 'elevenlabs';
-        } catch {
-          // Fall through to Gemini or synthetic fallback
+      if (!effectiveElevenLabsKey) {
+        res.status(400).json({
+          success: false,
+          provider: 'elevenlabs',
+          error:
+            'ElevenLabs API key is missing. Open "API Keys & Engines", paste your ElevenLabs sk_... key, and click Apply & Save.',
+        });
+        return;
+      }
+
+      try {
+        const result = await generateElevenLabsSpeech({
+          apiKey: effectiveElevenLabsKey,
+          voiceId: elevenLabsVoiceId,
+          narration,
+          modelId: elevenLabsModel,
+          stability: elevenLabsStability,
+          similarity: elevenLabsSimilarity,
+        });
+        base64Audio = result.base64;
+        audioMimeType = result.mimeType;
+        if (audioMimeType === 'audio/mpeg') {
+          fileName = fileName.replace(/\.wav$/i, '.mp3');
         }
+        modelUsed = elevenLabsModel;
+        providerUsed = 'elevenlabs';
+      } catch (err: any) {
+        const statusCode =
+          typeof err?.status === 'number' && err.status >= 400 && err.status < 600
+            ? err.status
+            : 502;
+        res.status(statusCode).json({
+          success: false,
+          provider: 'elevenlabs',
+          error: err?.message || 'ElevenLabs speech synthesis failed.',
+        });
+        return;
       }
     }
 

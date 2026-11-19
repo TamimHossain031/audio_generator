@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY_SETTINGS = 'bangla_voice_studio_api_keys';
+const LOCAL_STORAGE_VOICE_CONFIG = 'bangla_voice_studio_voice_config';
 
 function getInitialApiKeySettings(): ApiKeySettings {
   try {
@@ -42,10 +43,22 @@ function getInitialApiKeySettings(): ApiKeySettings {
   };
 }
 
+function getInitialVoiceConfig(): VoiceConfig {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_VOICE_CONFIG);
+    if (raw) {
+      return { ...DEFAULT_VOICE_CONFIG, ...JSON.parse(raw) };
+    }
+  } catch {
+    // Ignore
+  }
+  return DEFAULT_VOICE_CONFIG;
+}
+
 export default function App() {
   const [projectTitle, setProjectTitle] = useState('No Script Loaded');
   const [scenes, setScenes] = useState<SceneData[]>([]);
-  const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(DEFAULT_VOICE_CONFIG);
+  const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(getInitialVoiceConfig);
   const [apiKeySettings, setApiKeySettings] = useState<ApiKeySettings>(getInitialApiKeySettings);
   const [audioStates, setAudioStates] = useState<Record<number, SceneAudioState>>({});
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
@@ -60,6 +73,15 @@ export default function App() {
   const [isDraggingEmpty, setIsDraggingEmpty] = useState(false);
   const directFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const persistVoiceConfig = (next: VoiceConfig) => {
+    setVoiceConfig(next);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_VOICE_CONFIG, JSON.stringify(next));
+    } catch {
+      // Ignore
+    }
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
@@ -67,7 +89,7 @@ export default function App() {
 
   const handleSaveApiKeys = (newSettings: ApiKeySettings, newVoiceConfig: VoiceConfig) => {
     setApiKeySettings(newSettings);
-    setVoiceConfig(newVoiceConfig);
+    persistVoiceConfig(newVoiceConfig);
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY_SETTINGS, JSON.stringify(newSettings));
     } catch {
@@ -136,6 +158,22 @@ export default function App() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
+        if (effectiveVoice.provider === 'elevenlabs' || data.error) {
+          const errMessage =
+            data.error || `ElevenLabs generation failed (HTTP ${response.status}).`;
+          setAudioStates((prev) => ({
+            ...prev,
+            [sceneNum]: {
+              ...(prev[sceneNum] || {}),
+              status: 'error',
+              fileName: targetScene.fileName,
+              error: errMessage,
+            },
+          }));
+          showToast(errMessage);
+          return false;
+        }
+
         const localAudio = generateLocalVoiceWav(
           targetScene.narration,
           targetScene.duration,
@@ -257,14 +295,22 @@ export default function App() {
   ) => {
     setDropError(null);
     const nextVoiceConfig: VoiceConfig = data.voiceConfig
-      ? { ...voiceConfig, ...data.voiceConfig }
+      ? {
+          ...voiceConfig,
+          ...data.voiceConfig,
+          provider: voiceConfig.provider,
+          ttsModel: voiceConfig.ttsModel,
+          elevenLabsModel: voiceConfig.elevenLabsModel,
+          elevenLabsVoiceId: voiceConfig.elevenLabsVoiceId,
+          elevenLabsVoiceName: voiceConfig.elevenLabsVoiceName,
+        }
       : voiceConfig;
 
     setProjectTitle(data.title || 'Custom Voiceover Project');
     setScenes(data.scenes);
     setAudioStates({});
     setCurrentSceneIndex(0);
-    setVoiceConfig(nextVoiceConfig);
+    persistVoiceConfig(nextVoiceConfig);
 
     if (autoGenerateAudio) {
       showToast(`Loaded "${data.title}" (${data.scenes.length} scenes). Generating audio...`);
@@ -581,8 +627,9 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         config={voiceConfig}
+        elevenLabsApiKey={apiKeySettings.elevenLabsApiKey}
         onSave={(newConfig) => {
-          setVoiceConfig(newConfig);
+          persistVoiceConfig(newConfig);
           const activeVoiceLabel =
             newConfig.provider === 'elevenlabs'
               ? newConfig.elevenLabsVoiceName || 'ElevenLabs Voice'
