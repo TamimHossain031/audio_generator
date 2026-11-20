@@ -22,6 +22,19 @@ function isQuotaError(err: any): boolean {
   );
 }
 
+function isTemporaryDemandError(err: any): boolean {
+  const msg = (err?.message || '').toLowerCase();
+  const status = err?.status || err?.code;
+  return (
+    status === 503 ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('unavailable') ||
+    msg.includes('try again later') ||
+    msg.includes('503')
+  );
+}
+
 function extractCleanErrorMessage(err: any): string {
   const raw = String(err?.message || err || 'Validation failed');
   try {
@@ -421,18 +434,49 @@ export function createApiApp(): express.Express {
       return;
     }
 
-    // Google Gemini Key Validation (uses active models instead of deprecated gemini-2.5-flash)
-    const validationModels = [
-      'gemini-4-hydrogen',
-      'gemini-3.1-flash-lite',
-      'gemini-3.8-flash',
-    ];
-    let lastError: any = null;
-
+    // Google Gemini Key Validation
+    // 1) Try lightweight models.list first (zero inference tokens, immune to 503 model demand spikes)
     const ai = new GoogleGenAI({
       apiKey: cleanKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
+
+    try {
+      const modelsPager = await ai.models.list({ config: { pageSize: 1 } });
+      if (modelsPager) {
+        res.json({
+          valid: true,
+          provider: 'gemini',
+          status: 'Active & Ready',
+        });
+        return;
+      }
+    } catch (listErr: any) {
+      const listMsg = String(listErr?.message || '').toLowerCase();
+      const isDefiniteInvalidKey =
+        listErr?.status === 401 ||
+        listMsg.includes('api key not valid') ||
+        listMsg.includes('api_key_invalid') ||
+        listMsg.includes('invalid api key');
+      if (isDefiniteInvalidKey) {
+        res.json({
+          valid: false,
+          provider: 'gemini',
+          error: extractCleanErrorMessage(listErr),
+        });
+        return;
+      }
+      // Some Express / scoped keys disallow models.list; fall through to lightweight generateContent probe
+    }
+
+    // 2) Lightweight inference probe (prioritize Flash Lite first to avoid high-demand spikes)
+    const validationModels = [
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-4-hydrogen',
+    ];
+    let lastError: any = null;
+    let sawHighDemand = false;
 
     for (const probeModel of validationModels) {
       try {
@@ -457,6 +501,10 @@ export function createApiApp(): express.Express {
           });
           return;
         }
+        if (isTemporaryDemandError(err)) {
+          sawHighDemand = true;
+          continue;
+        }
         const msgLower = String(err?.message || '').toLowerCase();
         const isModelUnavailable =
           err?.status === 404 ||
@@ -467,6 +515,15 @@ export function createApiApp(): express.Express {
           break;
         }
       }
+    }
+
+    if (sawHighDemand) {
+      res.json({
+        valid: true,
+        provider: 'gemini',
+        status: 'Valid Key (Gemini servers temporarily busy — ready to use)',
+      });
+      return;
     }
 
     res.json({
@@ -592,48 +649,62 @@ export function createApiApp(): express.Express {
           continue;
         }
 
-        try {
-          const ai = new GoogleGenAI({
-            apiKey: currentKey,
-            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-          });
+        const primaryTtsModel = requestedModel || 'gemini-3.8-flash-tts';
+        const fallbackTtsModel =
+          primaryTtsModel === 'gemini-3.8-flash-tts'
+            ? 'gemini-3.8-flash-lite-tts'
+            : 'gemini-3.8-flash-tts';
+        const ttsModelsToTry = [primaryTtsModel, fallbackTtsModel];
 
-          const response: any = await ai.models.generateContent({
-            model: requestedModel || 'gemini-3.8-flash-tts',
-            contents: [
-              {
-                role: 'user',
-                parts: [{ text: narration, speechMetadata: { style: effectiveStyle } }],
-              },
-            ],
-            config: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: voiceName || 'Fenrir' },
+        const ai = new GoogleGenAI({
+          apiKey: currentKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        });
+
+        for (const ttsModel of ttsModelsToTry) {
+          try {
+            const response: any = await ai.models.generateContent({
+              model: ttsModel,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [{ text: narration, speechMetadata: { style: effectiveStyle } }],
+                },
+              ],
+              config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: voiceName || 'Fenrir' },
+                  },
                 },
               },
-            },
-          });
+            });
 
-          const candidate = response?.candidates?.[0];
-          const audioPart = candidate?.content?.parts?.find(
-            (part: any) => part.inlineData?.data
-          );
-          if (audioPart?.inlineData?.data) {
-            base64Audio = audioPart.inlineData.data;
-            modelUsed = requestedModel || 'gemini-3.8-flash-tts';
-            providerUsed = 'gemini';
-            keyUsedIndex = i;
-            googleKeyExhaustedUntil.delete(currentKey);
-            break;
-          }
-        } catch (err: any) {
-          if (isQuotaError(err)) {
-            googleKeyExhaustedUntil.set(currentKey, Date.now() + 30 * 60 * 1000);
-            autoSwitched = true;
+            const candidate = response?.candidates?.[0];
+            const audioPart = candidate?.content?.parts?.find(
+              (part: any) => part.inlineData?.data
+            );
+            if (audioPart?.inlineData?.data) {
+              base64Audio = audioPart.inlineData.data;
+              modelUsed = ttsModel;
+              providerUsed = 'gemini';
+              keyUsedIndex = i;
+              googleKeyExhaustedUntil.delete(currentKey);
+              break;
+            }
+          } catch (err: any) {
+            if (isQuotaError(err)) {
+              googleKeyExhaustedUntil.set(currentKey, Date.now() + 30 * 60 * 1000);
+              autoSwitched = true;
+            } else if (isTemporaryDemandError(err)) {
+              autoSwitched = true;
+              continue;
+            }
           }
         }
+
+        if (base64Audio) break;
       }
     }
 
