@@ -14,7 +14,6 @@ import {
   mergeWavAudio,
   downloadBlob,
 } from './utils/wavHelper';
-import { generateLocalVoiceWav } from './utils/browserTts';
 import { parseAndNormalizeScriptJson, ParsedScriptResult } from './utils/scriptParser';
 import {
   Sparkles,
@@ -155,54 +154,32 @@ export default function App() {
         }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = {
+          success: false,
+          error: `Server returned non-JSON response (HTTP ${response.status}): ${rawText.slice(0, 140)}`,
+        };
+      }
 
-      if (!response.ok || !data.success) {
-        if (effectiveVoice.provider === 'elevenlabs' || data.error) {
-          const errMessage =
-            data.error || `ElevenLabs generation failed (HTTP ${response.status}).`;
-          setAudioStates((prev) => ({
-            ...prev,
-            [sceneNum]: {
-              ...(prev[sceneNum] || {}),
-              status: 'error',
-              fileName: targetScene.fileName,
-              error: errMessage,
-            },
-          }));
-          showToast(errMessage);
-          return false;
-        }
-
-        const localAudio = generateLocalVoiceWav(
-          targetScene.narration,
-          targetScene.duration,
-          targetScene.emotion
-        );
-        const audioBlobUrl = URL.createObjectURL(localAudio.blob);
-
+      if (!response.ok || !data.success || !data.audioBase64) {
+        const errMessage =
+          data.error ||
+          `${effectiveVoice.provider === 'elevenlabs' ? 'ElevenLabs' : 'Google Gemini'} voice generation failed (HTTP ${response.status}).`;
         setAudioStates((prev) => ({
           ...prev,
           [sceneNum]: {
-            status: 'ready',
-            audioBase64: localAudio.audioBase64,
-            audioBlobUrl,
-            actualDuration: localAudio.duration,
+            ...(prev[sceneNum] || {}),
+            status: 'error',
             fileName: targetScene.fileName,
-            generatedAt: new Date().toISOString(),
-            modelUsed: 'Auto-Engine (Quota Protection)',
-            providerUsed: 'auto-fallback',
+            error: errMessage,
           },
         }));
-
-        return true;
-      }
-
-      if (data.autoSwitched && effectiveVoice.provider === 'gemini') {
-        setVoiceConfig((prev) => ({
-          ...prev,
-          ttsModel: 'gemini-3.8-flash-lite-tts',
-        }));
+        showToast(errMessage);
+        return false;
       }
 
       const audioMimeType = data.mimeType || 'audio/wav';
@@ -211,7 +188,7 @@ export default function App() {
       const estimatedSecs =
         audioMimeType === 'audio/mpeg'
           ? Math.max(1, Math.round(binaryLength / 16000))
-          : Math.max(1, Math.round((binaryLength - 44) / 48000));
+          : Math.max(1, Math.round(Math.max(0, binaryLength - 44) / 48000));
 
       setAudioStates((prev) => ({
         ...prev,
@@ -230,29 +207,20 @@ export default function App() {
       }));
 
       return true;
-    } catch {
-      const localAudio = generateLocalVoiceWav(
-        targetScene.narration,
-        targetScene.duration,
-        targetScene.emotion
-      );
-      const audioBlobUrl = URL.createObjectURL(localAudio.blob);
-
+    } catch (err: any) {
+      const errMessage =
+        err?.message || 'Network error while contacting the voice synthesis server.';
       setAudioStates((prev) => ({
         ...prev,
         [sceneNum]: {
-          status: 'ready',
-          audioBase64: localAudio.audioBase64,
-          audioBlobUrl,
-          actualDuration: localAudio.duration,
+          ...(prev[sceneNum] || {}),
+          status: 'error',
           fileName: targetScene.fileName,
-          generatedAt: new Date().toISOString(),
-          modelUsed: 'Auto-Engine (Quota Protection)',
-          providerUsed: 'auto-fallback',
+          error: errMessage,
         },
       }));
-
-      return true;
+      showToast(errMessage);
+      return false;
     }
   };
 

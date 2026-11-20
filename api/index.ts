@@ -69,32 +69,18 @@ function getGoogleKeysPool(userKeys?: string[]): string[] {
   return pool;
 }
 
-function generateSyntheticWavBase64(durationSec = 12, emotion = 'Curious'): string {
-  const sampleRate = 24000;
-  const numSamples = Math.max(sampleRate * 4, sampleRate * (durationSec || 12));
-  const pcm = new Int16Array(numSamples);
-  let baseFreq = 125;
-  if (emotion === 'Curious') baseFreq = 135;
-  if (emotion === 'Energetic') baseFreq = 145;
-  if (emotion === 'Analytical') baseFreq = 118;
-  if (emotion === 'Inspirational') baseFreq = 130;
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const rhythm = 0.5 + 0.5 * Math.sin(t * 1.8 * Math.PI);
-    if (rhythm > 0.15) {
-      const pitch = baseFreq * (1 + 0.08 * Math.sin(t * 2.2));
-      const f1 = Math.sin(2 * Math.PI * pitch * t);
-      const f2 = 0.35 * Math.sin(2 * Math.PI * (pitch * 4.2) * t);
-      const breath = 0.03 * (Math.random() * 2 - 1);
-      const pulse = Math.sin(t * 9 * Math.PI) > 0 ? 1 : 0.25;
-      const env = Math.min(1, Math.min(t * 8, ((durationSec || 12) - t) * 8));
-      pcm[i] = Math.floor((f1 + f2 + breath) * pulse * env * 0.4 * 32767);
-    }
+function ensureWavBase64(base64Data: string, mimeType = ''): string {
+  const rawBuf = Buffer.from(base64Data, 'base64');
+  // Already a complete WAV file (RIFF header present, e.g., Gemini 3.8 TTS unary output)
+  if (rawBuf.length >= 12 && rawBuf.subarray(0, 4).toString('ascii') === 'RIFF') {
+    return base64Data;
   }
 
+  // Raw 16-bit signed LE mono PCM (e.g., gemini-2.5-flash-preview-tts) -> wrap in 44-byte WAV header
+  const rateMatch = /rate=(\d+)/i.exec(mimeType || '');
+  const sampleRate = rateMatch ? Number(rateMatch[1]) || 24000 : 24000;
   const header = Buffer.alloc(44);
-  const dataLen = pcm.byteLength;
+  const dataLen = rawBuf.byteLength;
   header.write('RIFF', 0);
   header.writeUInt32LE(36 + dataLen, 4);
   header.write('WAVE', 8);
@@ -109,8 +95,7 @@ function generateSyntheticWavBase64(durationSec = 12, emotion = 'Curious'): stri
   header.write('data', 36);
   header.writeUInt32LE(dataLen, 40);
 
-  const full = Buffer.concat([header, Buffer.from(pcm.buffer)]);
-  return full.toString('base64');
+  return Buffer.concat([header, rawBuf]).toString('base64');
 }
 
 function cleanElevenLabsApiKey(raw?: string): string {
@@ -635,11 +620,30 @@ export function createApiApp(): express.Express {
       }
     }
 
+    let lastGeminiError = '';
+    let primaryGeminiError = '';
+
     if (!base64Audio) {
       const candidateKeys = getGoogleKeysPool(googleApiKeys);
       const effectiveStyle =
         customStylePrompt ||
         `${gender} speaker, ${style}. Emotion: ${emotion}. Tone: ${tone}. Speed: ${speed}. Pronunciation: ${pronunciation}.`;
+
+      if (candidateKeys.length === 0) {
+        lastGeminiError =
+          'No Google Gemini API key configured. Add a Gemini API key in "API Keys & Engines".';
+      }
+
+      const primaryTtsModel = requestedModel || 'gemini-3.8-flash-tts';
+      const alternate38Model =
+        primaryTtsModel === 'gemini-3.8-flash-tts'
+          ? 'gemini-3.8-flash-lite-tts'
+          : 'gemini-3.8-flash-tts';
+      const ttsModelsToTry = [
+        primaryTtsModel,
+        alternate38Model,
+        'gemini-2.5-flash-preview-tts',
+      ];
 
       for (let i = 0; i < candidateKeys.length; i++) {
         const currentKey = candidateKeys[i];
@@ -649,62 +653,126 @@ export function createApiApp(): express.Express {
           continue;
         }
 
-        const primaryTtsModel = requestedModel || 'gemini-3.8-flash-tts';
-        const fallbackTtsModel =
-          primaryTtsModel === 'gemini-3.8-flash-tts'
-            ? 'gemini-3.8-flash-lite-tts'
-            : 'gemini-3.8-flash-tts';
-        const ttsModelsToTry = [primaryTtsModel, fallbackTtsModel];
+        // AQ.* keys may be Vertex AI Express keys; try default Gemini API first, then vertexai: true if needed
+        const clientModes: Array<{ vertexai: boolean }> = currentKey.startsWith('AQ.')
+          ? [{ vertexai: false }, { vertexai: true }]
+          : [{ vertexai: false }];
 
-        const ai = new GoogleGenAI({
-          apiKey: currentKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-        });
+        for (const mode of clientModes) {
+          const ai = new GoogleGenAI({
+            apiKey: currentKey,
+            ...(mode.vertexai ? { vertexai: true } : { apiVersion: 'v1beta' }),
+            httpOptions: {
+              ...(mode.vertexai ? {} : { apiVersion: 'v1beta' }),
+              headers: { 'User-Agent': 'aistudio-build' },
+            },
+          });
 
-        for (const ttsModel of ttsModelsToTry) {
-          try {
-            const response: any = await ai.models.generateContent({
-              model: ttsModel,
-              contents: [
-                {
-                  role: 'user',
-                  parts: [{ text: narration, speechMetadata: { style: effectiveStyle } }],
-                },
-              ],
-              config: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voiceName || 'Fenrir' },
+          let keyQuotaHit = false;
+
+          for (const ttsModel of ttsModelsToTry) {
+            const supportsSpeechMetadata = ttsModel.startsWith('gemini-3.8');
+            const attemptPayloads: any[] = supportsSpeechMetadata
+              ? [
+                  [
+                    {
+                      role: 'user',
+                      parts: [{ text: narration, speechMetadata: { style: effectiveStyle } }],
+                    },
+                  ],
+                  [
+                    {
+                      role: 'user',
+                      parts: [{ text: `Speak in ${effectiveStyle} style: ${narration}` }],
+                    },
+                  ],
+                ]
+              : [
+                  [
+                    {
+                      role: 'user',
+                      parts: [{ text: `Speak in ${effectiveStyle} style: ${narration}` }],
+                    },
+                  ],
+                ];
+
+            for (const contentsPayload of attemptPayloads) {
+              try {
+                const response: any = await ai.models.generateContent({
+                  model: ttsModel,
+                  contents: contentsPayload,
+                  config: {
+                    responseModalities: ['AUDIO'],
+                    speechConfig: {
+                      voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: voiceName || 'Fenrir' },
+                      },
+                    },
                   },
-                },
-              },
-            });
+                });
 
-            const candidate = response?.candidates?.[0];
-            const audioPart = candidate?.content?.parts?.find(
-              (part: any) => part.inlineData?.data
-            );
-            if (audioPart?.inlineData?.data) {
-              base64Audio = audioPart.inlineData.data;
-              modelUsed = ttsModel;
-              providerUsed = 'gemini';
-              keyUsedIndex = i;
-              googleKeyExhaustedUntil.delete(currentKey);
-              break;
+                const candidate = response?.candidates?.[0];
+                const audioPart = candidate?.content?.parts?.find(
+                  (part: any) => part.inlineData?.data
+                );
+                if (audioPart?.inlineData?.data) {
+                  base64Audio = ensureWavBase64(
+                    audioPart.inlineData.data,
+                    audioPart.inlineData.mimeType
+                  );
+                  audioMimeType = 'audio/wav';
+                  modelUsed = mode.vertexai ? `${ttsModel} (Vertex)` : ttsModel;
+                  providerUsed = 'gemini';
+                  keyUsedIndex = i;
+                  googleKeyExhaustedUntil.delete(currentKey);
+                  break;
+                }
+              } catch (err: any) {
+                const cleanMsg = extractCleanErrorMessage(err);
+                if (!mode.vertexai) {
+                  primaryGeminiError = `${ttsModel}: ${cleanMsg}`;
+                }
+                lastGeminiError = cleanMsg;
+
+                if (isQuotaError(err)) {
+                  googleKeyExhaustedUntil.set(currentKey, Date.now() + 30 * 60 * 1000);
+                  autoSwitched = true;
+                  keyQuotaHit = true;
+                  break;
+                }
+                const errLower = cleanMsg.toLowerCase();
+                // Retry without speechMetadata if schema or HTTP 400 rejected it
+                const isSchemaFieldErr =
+                  err?.status === 400 ||
+                  errLower.includes('speechmetadata') ||
+                  errLower.includes('unknown name') ||
+                  errLower.includes('invalid json payload') ||
+                  errLower.includes('invalid argument');
+                if (isSchemaFieldErr) {
+                  continue;
+                }
+                if (isTemporaryDemandError(err)) {
+                  autoSwitched = true;
+                }
+                break;
+              }
             }
-          } catch (err: any) {
-            if (isQuotaError(err)) {
-              googleKeyExhaustedUntil.set(currentKey, Date.now() + 30 * 60 * 1000);
-              autoSwitched = true;
-            } else if (isTemporaryDemandError(err)) {
-              autoSwitched = true;
-              continue;
-            }
+
+            if (base64Audio || keyQuotaHit) break;
           }
+
+          if (base64Audio || keyQuotaHit) break;
         }
 
         if (base64Audio) break;
+      }
+
+      if (!base64Audio && primaryGeminiError) {
+        // Avoid replacing a real Gemini API error with an "aiplatform.googleapis.com not enabled" fallback error
+        const vertexNotEnabled = lastGeminiError.toLowerCase().includes('aiplatform.googleapis.com');
+        if (vertexNotEnabled || !lastGeminiError) {
+          lastGeminiError = primaryGeminiError;
+        }
       }
     }
 
@@ -734,16 +802,20 @@ export function createApiApp(): express.Express {
           providerUsed = 'elevenlabs';
           autoSwitched = true;
         } catch {
-          // Fall through to synthetic
+          // Keep original Gemini error
         }
       }
     }
 
     if (!base64Audio) {
-      base64Audio = generateSyntheticWavBase64(Number(duration) || 12, emotion);
-      modelUsed = 'auto-speech-engine (quota-protected)';
-      providerUsed = 'auto-fallback';
-      autoSwitched = true;
+      res.status(502).json({
+        success: false,
+        provider: providerUsed,
+        error:
+          lastGeminiError ||
+          'Google Gemini TTS failed for all configured keys. Please verify your API key has Gemini TTS access or switch to ElevenLabs.',
+      });
+      return;
     }
 
     res.json({
