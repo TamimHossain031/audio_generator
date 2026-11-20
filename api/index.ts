@@ -421,34 +421,59 @@ export function createApiApp(): express.Express {
       return;
     }
 
-    // Google Gemini Key Validation
-    try {
-      const ai = new GoogleGenAI({ apiKey: cleanKey, apiVersion: 'v1alpha' });
-      const probe = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
-      });
-      if (probe) {
-        res.json({ valid: true, provider: 'gemini', status: 'Active & Ready' });
-      } else {
-        res.json({ valid: true, provider: 'gemini', status: 'Key accepted' });
-      }
-    } catch (err: any) {
-      if (isQuotaError(err)) {
+    // Google Gemini Key Validation (uses active models instead of deprecated gemini-2.5-flash)
+    const validationModels = [
+      'gemini-4-hydrogen',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+    ];
+    let lastError: any = null;
+
+    const ai = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    for (const probeModel of validationModels) {
+      try {
+        const probe = await ai.models.generateContent({
+          model: probeModel,
+          contents: 'ping',
+        });
         res.json({
           valid: true,
           provider: 'gemini',
-          status: 'Valid (Currently Quota Limited - in cooldown)',
-          isQuota: true,
+          status: probe ? `Active & Ready (${probeModel})` : 'Key accepted',
         });
-      } else {
-        res.json({
-          valid: false,
-          provider: 'gemini',
-          error: extractCleanErrorMessage(err),
-        });
+        return;
+      } catch (err: any) {
+        lastError = err;
+        if (isQuotaError(err)) {
+          res.json({
+            valid: true,
+            provider: 'gemini',
+            status: 'Valid (Currently Quota Limited - in cooldown)',
+            isQuota: true,
+          });
+          return;
+        }
+        const msgLower = String(err?.message || '').toLowerCase();
+        const isModelUnavailable =
+          err?.status === 404 ||
+          msgLower.includes('no longer available') ||
+          msgLower.includes('not found') ||
+          msgLower.includes('not supported');
+        if (!isModelUnavailable) {
+          break;
+        }
       }
     }
+
+    res.json({
+      valid: false,
+      provider: 'gemini',
+      error: extractCleanErrorMessage(lastError),
+    });
   });
 
   router.get('/keys/status', (_req, res) => {
@@ -570,7 +595,6 @@ export function createApiApp(): express.Express {
         try {
           const ai = new GoogleGenAI({
             apiKey: currentKey,
-            apiVersion: 'v1alpha',
             httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
           });
 
