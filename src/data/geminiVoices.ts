@@ -6,7 +6,9 @@ export interface GeminiVoiceOption {
   recommended?: boolean;
 }
 
+// Verified official Google Gemini TTS prebuilt voices (16 Male, 14 Female)
 export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
+  // --- MALE VOICES (16) ---
   {
     name: 'Fenrir',
     gender: 'Male',
@@ -27,47 +29,10 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     style: 'Calm, deep, analytical technical lecturer',
   },
   {
-    name: 'Kore',
-    gender: 'Female',
-    toneTag: 'Firm',
-    style: 'Smooth, educational, articulate presenter',
-    recommended: true,
-  },
-  {
-    name: 'Zephyr',
-    gender: 'Female',
-    toneTag: 'Bright',
-    style: 'Warm, dynamic, engaging instructor',
-  },
-  {
     name: 'Orus',
     gender: 'Male',
     toneTag: 'Firm',
     style: 'Steady, lower-middle authoritative speaker',
-  },
-  {
-    name: 'Leda',
-    gender: 'Female',
-    toneTag: 'Youthful',
-    style: 'Energetic, fresh, clear tutorial host',
-  },
-  {
-    name: 'Aoede',
-    gender: 'Female',
-    toneTag: 'Breezy',
-    style: 'Relaxed, natural, conversational narrator',
-  },
-  {
-    name: 'Callirrhoe',
-    gender: 'Female',
-    toneTag: 'Easy-going',
-    style: 'Calm, approachable, pleasant explainer',
-  },
-  {
-    name: 'Autonoe',
-    gender: 'Female',
-    toneTag: 'Bright',
-    style: 'Optimistic, cheerful, engaging host',
   },
   {
     name: 'Enceladus',
@@ -94,18 +59,6 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     style: 'Polished, pleasant studio-grade narrator',
   },
   {
-    name: 'Despina',
-    gender: 'Female',
-    toneTag: 'Smooth',
-    style: 'Flowing, calm, refined voiceover',
-  },
-  {
-    name: 'Erinome',
-    gender: 'Female',
-    toneTag: 'Clear',
-    style: 'Precise, structured educational speaker',
-  },
-  {
     name: 'Algenib',
     gender: 'Male',
     toneTag: 'Gravelly',
@@ -116,18 +69,6 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     gender: 'Male',
     toneTag: 'Informative',
     style: 'Professional documentary & tech host',
-  },
-  {
-    name: 'Laomedeia',
-    gender: 'Female',
-    toneTag: 'Upbeat',
-    style: 'Higher-pitch, enthusiastic explainer',
-  },
-  {
-    name: 'Achernar',
-    gender: 'Female',
-    toneTag: 'Soft',
-    style: 'Gentle, higher-pitch, friendly narrator',
   },
   {
     name: 'Alnilam',
@@ -142,18 +83,6 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     style: 'Steady, neutral technical reader',
   },
   {
-    name: 'Gacrux',
-    gender: 'Female',
-    toneTag: 'Mature',
-    style: 'Poised, experienced, thoughtful lecturer',
-  },
-  {
-    name: 'Pulcherrima',
-    gender: 'Male',
-    toneTag: 'Forward',
-    style: 'Projecting, confident, clear speaker',
-  },
-  {
     name: 'Achird',
     gender: 'Male',
     toneTag: 'Friendly',
@@ -164,12 +93,6 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     gender: 'Male',
     toneTag: 'Casual',
     style: 'Natural, conversational podcast tone',
-  },
-  {
-    name: 'Vindemiatrix',
-    gender: 'Female',
-    toneTag: 'Gentle',
-    style: 'Empathetic, soft, clear storyteller',
   },
   {
     name: 'Sadachbia',
@@ -183,6 +106,87 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     toneTag: 'Knowledgeable',
     style: 'Academic, calm, steady mentor voice',
   },
+
+  // --- FEMALE VOICES (14) ---
+  {
+    name: 'Kore',
+    gender: 'Female',
+    toneTag: 'Firm',
+    style: 'Smooth, educational, articulate presenter',
+    recommended: true,
+  },
+  {
+    name: 'Zephyr',
+    gender: 'Female',
+    toneTag: 'Bright',
+    style: 'Warm, dynamic, engaging instructor',
+  },
+  {
+    name: 'Leda',
+    gender: 'Female',
+    toneTag: 'Youthful',
+    style: 'Energetic, fresh, clear tutorial host',
+  },
+  {
+    name: 'Aoede',
+    gender: 'Female',
+    toneTag: 'Breezy',
+    style: 'Relaxed, natural, conversational narrator',
+  },
+  {
+    name: 'Callirrhoe',
+    gender: 'Female',
+    toneTag: 'Easy-going',
+    style: 'Calm, approachable, pleasant explainer',
+  },
+  {
+    name: 'Autonoe',
+    gender: 'Female',
+    toneTag: 'Bright',
+    style: 'Optimistic, cheerful, engaging host',
+  },
+  {
+    name: 'Despina',
+    gender: 'Female',
+    toneTag: 'Smooth',
+    style: 'Flowing, calm, refined voiceover',
+  },
+  {
+    name: 'Erinome',
+    gender: 'Female',
+    toneTag: 'Clear',
+    style: 'Precise, structured educational speaker',
+  },
+  {
+    name: 'Laomedeia',
+    gender: 'Female',
+    toneTag: 'Upbeat',
+    style: 'Higher-pitch, enthusiastic explainer',
+  },
+  {
+    name: 'Achernar',
+    gender: 'Female',
+    toneTag: 'Soft',
+    style: 'Gentle, higher-pitch, friendly narrator',
+  },
+  {
+    name: 'Gacrux',
+    gender: 'Female',
+    toneTag: 'Mature',
+    style: 'Poised, experienced, thoughtful lecturer',
+  },
+  {
+    name: 'Pulcherrima',
+    gender: 'Female',
+    toneTag: 'Forward',
+    style: 'Projecting, confident, clear female speaker',
+  },
+  {
+    name: 'Vindemiatrix',
+    gender: 'Female',
+    toneTag: 'Gentle',
+    style: 'Empathetic, soft, clear storyteller',
+  },
   {
     name: 'Sulafat',
     gender: 'Female',
@@ -190,3 +194,14 @@ export const CURATED_GEMINI_VOICES: GeminiVoiceOption[] = [
     style: 'Welcoming, smooth, middle-pitch presenter',
   },
 ];
+
+export function getGeminiVoiceGender(
+  voiceName?: string,
+  fallback: 'Male' | 'Female' = 'Male'
+): 'Male' | 'Female' {
+  if (!voiceName) return fallback;
+  const match = CURATED_GEMINI_VOICES.find(
+    (v) => v.name.toLowerCase() === voiceName.trim().toLowerCase()
+  );
+  return match ? match.gender : fallback;
+}

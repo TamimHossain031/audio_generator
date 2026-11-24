@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { DEFAULT_VOICE_CONFIG } from './data/defaultScenes';
+import { getGeminiVoiceGender } from './data/geminiVoices';
 import { SceneData, VoiceConfig, SceneAudioState, ApiKeySettings } from './types';
 import { Header } from './components/Header';
 import { SceneCard } from './components/SceneCard';
@@ -46,7 +47,11 @@ function getInitialVoiceConfig(): VoiceConfig {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_VOICE_CONFIG);
     if (raw) {
-      return { ...DEFAULT_VOICE_CONFIG, ...JSON.parse(raw) };
+      const merged: VoiceConfig = { ...DEFAULT_VOICE_CONFIG, ...JSON.parse(raw) };
+      if (merged.provider !== 'elevenlabs') {
+        merged.gender = getGeminiVoiceGender(merged.voiceName, merged.gender);
+      }
+      return merged;
     }
   } catch {
     // Ignore
@@ -268,6 +273,11 @@ export default function App() {
           ...data.voiceConfig,
           provider: voiceConfig.provider,
           ttsModel: voiceConfig.ttsModel,
+          voiceName: voiceConfig.voiceName,
+          gender:
+            voiceConfig.provider === 'elevenlabs'
+              ? voiceConfig.gender
+              : getGeminiVoiceGender(voiceConfig.voiceName, voiceConfig.gender),
           elevenLabsModel: voiceConfig.elevenLabsModel,
           elevenLabsVoiceId: voiceConfig.elevenLabsVoiceId,
           elevenLabsVoiceName: voiceConfig.elevenLabsVoiceName,
@@ -595,6 +605,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         config={voiceConfig}
+        googleApiKeys={apiKeySettings.googleApiKeys}
         elevenLabsApiKey={apiKeySettings.elevenLabsApiKey}
         onSave={(newConfig) => {
           persistVoiceConfig(newConfig);

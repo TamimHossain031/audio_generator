@@ -13,7 +13,9 @@ export interface ElevenLabsVoiceOption {
 }
 
 // Verified ElevenLabs premade voices that work on Free Tier API as well as Paid plans
+// Cleanly organized by Male (14), Female (7), and Neutral (1)
 export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
+  // --- MALE VOICES (14) ---
   {
     voice_id: 'pNInz6obpgDQGcFmaJgB',
     name: 'Adam',
@@ -29,20 +31,6 @@ export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
     labels: { accent: 'American', gender: 'male', use_case: 'educational' },
   },
   {
-    voice_id: 'Xb7hH8MSUJpSbSDYk0k2',
-    name: 'Alice',
-    category: 'premade',
-    description: 'Clear, engaging British educator & explainer',
-    labels: { accent: 'British', gender: 'female', use_case: 'educational' },
-  },
-  {
-    voice_id: 'EXAVITQu4vr4xnSDxMaL',
-    name: 'Sarah',
-    category: 'premade',
-    description: 'Mature, reassuring, confident news & tutorial presenter',
-    labels: { accent: 'American', gender: 'female', use_case: 'news' },
-  },
-  {
     voice_id: 'JBFqnCBsd6RMkjVDRZzb',
     name: 'George',
     category: 'premade',
@@ -55,20 +43,6 @@ export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
     category: 'premade',
     description: 'Energetic, articulate, modern social media creator',
     labels: { accent: 'American', gender: 'male', use_case: 'podcast' },
-  },
-  {
-    voice_id: 'hpp4J3VqNfWAUOO0d1Us',
-    name: 'Bella',
-    category: 'premade',
-    description: 'Professional, bright, warm presenter',
-    labels: { accent: 'American', gender: 'female', use_case: 'narration' },
-  },
-  {
-    voice_id: 'FGY2WhTYpPnrIDTdsKH5',
-    name: 'Laura',
-    category: 'premade',
-    description: 'Enthusiastic, expressive, bright social explainer',
-    labels: { accent: 'American', gender: 'female', use_case: 'social' },
   },
   {
     voice_id: 'onwK4e9ZLuTAKqWW03F9',
@@ -97,27 +71,6 @@ export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
     category: 'premade',
     description: 'Charming, down-to-earth, easy-to-follow tech explainer',
     labels: { accent: 'American', gender: 'male', use_case: 'conversational' },
-  },
-  {
-    voice_id: 'cgSgspJ2msm6clMCkdW9',
-    name: 'Jessica',
-    category: 'premade',
-    description: 'Playful, bright, warm tutorial & course host',
-    labels: { accent: 'American', gender: 'female', use_case: 'conversational' },
-  },
-  {
-    voice_id: 'XrExE9yKIg1WjnnlVkGX',
-    name: 'Matilda',
-    category: 'premade',
-    description: 'Knowledgeable, professional lesson & audiobook narrator',
-    labels: { accent: 'American', gender: 'female', use_case: 'narration' },
-  },
-  {
-    voice_id: 'pFZP5JQG7iQjIQuC4Bku',
-    name: 'Lily',
-    category: 'premade',
-    description: 'Velvety, expressive British storytelling voice',
-    labels: { accent: 'British', gender: 'female', use_case: 'narration' },
   },
   {
     voice_id: 'IKne3meq5aSn9XLyUdCD',
@@ -161,6 +114,59 @@ export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
     description: 'Bold, intense, high-impact dramatic narrator',
     labels: { accent: 'American', gender: 'male', use_case: 'characters' },
   },
+
+  // --- FEMALE VOICES (7) ---
+  {
+    voice_id: 'Xb7hH8MSUJpSbSDYk0k2',
+    name: 'Alice',
+    category: 'premade',
+    description: 'Clear, engaging British educator & explainer',
+    labels: { accent: 'British', gender: 'female', use_case: 'educational' },
+  },
+  {
+    voice_id: 'EXAVITQu4vr4xnSDxMaL',
+    name: 'Sarah',
+    category: 'premade',
+    description: 'Mature, reassuring, confident news & tutorial presenter',
+    labels: { accent: 'American', gender: 'female', use_case: 'news' },
+  },
+  {
+    voice_id: 'hpp4J3VqNfWAUOO0d1Us',
+    name: 'Bella',
+    category: 'premade',
+    description: 'Professional, bright, warm presenter',
+    labels: { accent: 'American', gender: 'female', use_case: 'narration' },
+  },
+  {
+    voice_id: 'FGY2WhTYpPnrIDTdsKH5',
+    name: 'Laura',
+    category: 'premade',
+    description: 'Enthusiastic, expressive, bright social explainer',
+    labels: { accent: 'American', gender: 'female', use_case: 'social' },
+  },
+  {
+    voice_id: 'cgSgspJ2msm6clMCkdW9',
+    name: 'Jessica',
+    category: 'premade',
+    description: 'Playful, bright, warm tutorial & course host',
+    labels: { accent: 'American', gender: 'female', use_case: 'conversational' },
+  },
+  {
+    voice_id: 'XrExE9yKIg1WjnnlVkGX',
+    name: 'Matilda',
+    category: 'premade',
+    description: 'Knowledgeable, professional lesson & audiobook narrator',
+    labels: { accent: 'American', gender: 'female', use_case: 'narration' },
+  },
+  {
+    voice_id: 'pFZP5JQG7iQjIQuC4Bku',
+    name: 'Lily',
+    category: 'premade',
+    description: 'Velvety, expressive British storytelling voice',
+    labels: { accent: 'British', gender: 'female', use_case: 'narration' },
+  },
+
+  // --- NEUTRAL VOICES (1) ---
   {
     voice_id: 'SAz9YHcvj6GT2YYXdXww',
     name: 'River',
@@ -169,3 +175,10 @@ export const CURATED_ELEVENLABS_VOICES: ElevenLabsVoiceOption[] = [
     labels: { accent: 'American', gender: 'neutral', use_case: 'conversational' },
   },
 ];
+
+export function normalizeVoiceGender(gender?: string): 'male' | 'female' | 'neutral' {
+  const g = (gender || '').trim().toLowerCase();
+  if (g === 'female' || g === 'woman' || g === 'f') return 'female';
+  if (g === 'male' || g === 'man' || g === 'm') return 'male';
+  return 'neutral';
+}

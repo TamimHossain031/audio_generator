@@ -14,13 +14,12 @@ import {
   Eye,
   EyeOff,
   Check,
-  Search,
-  Mic,
   Play,
 } from 'lucide-react';
 import { ApiKeySettings, VoiceConfig, TtsProvider } from '../types';
-import { CURATED_ELEVENLABS_VOICES } from '../data/elevenLabsVoices';
-import { CURATED_GEMINI_VOICES } from '../data/geminiVoices';
+import { CURATED_ELEVENLABS_VOICES, normalizeVoiceGender } from '../data/elevenLabsVoices';
+import { CURATED_GEMINI_VOICES, getGeminiVoiceGender } from '../data/geminiVoices';
+import { VoicePickerGrid, VoicePickerItem } from './VoicePickerGrid';
 import { createWavBlobUrl } from '../utils/wavHelper';
 
 interface Props {
@@ -65,6 +64,8 @@ export const ApiKeysModal: React.FC<Props> = ({
   const [geminiVoiceSearch, setGeminiVoiceSearch] = useState('');
   const [isTestingVoice, setIsTestingVoice] = useState(false);
   const [voiceTestMessage, setVoiceTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isTestingGeminiVoice, setIsTestingGeminiVoice] = useState(false);
+  const [geminiTestMessage, setGeminiTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,6 +81,7 @@ export const ApiKeysModal: React.FC<Props> = ({
       setGeminiVoiceFilter('all');
       setGeminiVoiceSearch('');
       setVoiceTestMessage(null);
+      setGeminiTestMessage(null);
       loadVoices(apiKeySettings.elevenLabsApiKey || '');
     }
   }, [isOpen, apiKeySettings, voiceConfig]);
@@ -136,6 +138,51 @@ export const ApiKeysModal: React.FC<Props> = ({
       });
     } finally {
       setIsTestingVoice(false);
+    }
+  };
+
+  const handleTestGeminiVoice = async () => {
+    setIsTestingGeminiVoice(true);
+    setGeminiTestMessage(null);
+    const voiceGender = getGeminiVoiceGender(selectedGeminiVoiceName);
+    try {
+      const res = await fetch('/api/tts/generate-scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scene: 1,
+          narration: 'নমস্কার! আমি আপনার সিলেক্ট করা গুগল জেমিনি ভয়েস টেস্ট করছি।',
+          emotion: 'Friendly',
+          voiceName: selectedGeminiVoiceName,
+          gender: voiceGender,
+          provider: 'gemini',
+          model: selectedGeminiModel,
+          googleApiKeys: googleKeys,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || !data.audioBase64) {
+        setGeminiTestMessage({
+          ok: false,
+          text: data.error || `Gemini voice test failed (HTTP ${res.status}).`,
+        });
+        return;
+      }
+      const blobUrl = createWavBlobUrl(data.audioBase64, data.mimeType || 'audio/wav');
+      const audio = new Audio(blobUrl);
+      audio.onended = () => URL.revokeObjectURL(blobUrl);
+      await audio.play().catch(() => {});
+      setGeminiTestMessage({
+        ok: true,
+        text: `Playing ${selectedGeminiVoiceName} (${voiceGender === 'Female' ? '♀ Female' : '♂ Male'}) via ${data.modelUsed || selectedGeminiModel}`,
+      });
+    } catch (err: any) {
+      setGeminiTestMessage({
+        ok: false,
+        text: err?.message || 'Failed to test Gemini voice.',
+      });
+    } finally {
+      setIsTestingGeminiVoice(false);
     }
   };
 
@@ -496,92 +543,79 @@ export const ApiKeysModal: React.FC<Props> = ({
 
               {/* Gemini Prebuilt Voice Selection */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                    Select Gemini Voice ({CURATED_GEMINI_VOICES.length} Studio Voices)
-                  </label>
-                  <span className="text-[11px] font-mono text-cyan-400">
-                    Active: {selectedGeminiVoiceName}
-                  </span>
-                </div>
+                {(() => {
+                  const activeGeminiGender = getGeminiVoiceGender(selectedGeminiVoiceName);
+                  const geminiItems: VoicePickerItem[] = CURATED_GEMINI_VOICES.map((voice) => ({
+                    id: voice.name,
+                    name: voice.name,
+                    gender: voice.gender === 'Female' ? 'female' : 'male',
+                    subtitle: voice.style,
+                    tag: voice.toneTag,
+                    recommended: voice.recommended,
+                  }));
 
-                {/* Search & Gender Filter */}
-                <div className="flex flex-col sm:flex-row gap-2 mb-2.5">
-                  <div className="relative flex-1">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={geminiVoiceSearch}
-                      onChange={(e) => setGeminiVoiceSearch(e.target.value)}
-                      placeholder="Search Gemini voice name, tone, or style..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 shrink-0">
-                    {(['all', 'male', 'female'] as const).map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setGeminiVoiceFilter(g)}
-                        className={`px-2.5 py-1 rounded text-[11px] font-semibold capitalize transition ${
-                          geminiVoiceFilter === g
-                            ? 'bg-indigo-600 text-white'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1.5 border border-slate-800 rounded-xl bg-slate-950/50">
-                  {CURATED_GEMINI_VOICES.filter((voice) => {
-                    const g = voice.gender.toLowerCase();
-                    if (geminiVoiceFilter !== 'all' && g !== geminiVoiceFilter) return false;
-                    if (geminiVoiceSearch.trim()) {
-                      const q = geminiVoiceSearch.toLowerCase();
-                      const match =
-                        voice.name.toLowerCase().includes(q) ||
-                        voice.toneTag.toLowerCase().includes(q) ||
-                        voice.style.toLowerCase().includes(q);
-                      if (!match) return false;
-                    }
-                    return true;
-                  }).map((voice) => {
-                    const isSelected = selectedGeminiVoiceName === voice.name;
-                    return (
-                      <button
-                        key={voice.name}
-                        type="button"
-                        onClick={() => setSelectedGeminiVoiceName(voice.name)}
-                        className={`text-left p-2.5 rounded-lg border transition ${
-                          isSelected
-                            ? 'bg-indigo-600/20 border-indigo-500 ring-1 ring-indigo-500'
-                            : 'bg-slate-900 border-slate-800/80 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <Mic className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                            <span className="font-semibold text-xs text-slate-100 font-mono truncate">
-                              {voice.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-300">
-                              {voice.toneTag}
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-                              {voice.gender}
-                            </span>
-                          </div>
+                  return (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                          Select Gemini Voice ({CURATED_GEMINI_VOICES.length} Studio Voices)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[11px] font-mono px-2 py-0.5 rounded-md border font-semibold ${
+                              activeGeminiGender === 'Female'
+                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                            }`}
+                          >
+                            {activeGeminiGender === 'Female' ? '♀ Female' : '♂ Male'} • {selectedGeminiVoiceName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleTestGeminiVoice}
+                            disabled={isTestingGeminiVoice}
+                            className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 transition disabled:opacity-40"
+                          >
+                            <Play className="w-3 h-3" />
+                            <span>{isTestingGeminiVoice ? 'Testing...' : 'Test Voice'}</span>
+                          </button>
                         </div>
-                        <p className="text-[11px] text-slate-400 line-clamp-1">{voice.style}</p>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+
+                      {geminiTestMessage && (
+                        <p
+                          className={`text-[11px] mb-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
+                            geminiTestMessage.ok
+                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                              : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                          }`}
+                        >
+                          {geminiTestMessage.ok ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>{geminiTestMessage.text}</span>
+                        </p>
+                      )}
+
+                      <VoicePickerGrid
+                        items={geminiItems}
+                        selectedId={selectedGeminiVoiceName}
+                        onSelect={(item) => {
+                          setSelectedGeminiVoiceName(item.id);
+                          setGeminiTestMessage(null);
+                        }}
+                        searchQuery={geminiVoiceSearch}
+                        onSearchChange={setGeminiVoiceSearch}
+                        genderFilter={geminiVoiceFilter}
+                        onGenderFilterChange={setGeminiVoiceFilter}
+                        searchPlaceholder="Search Gemini voice name, tone, or style..."
+                        maxHeightClass="max-h-64"
+                      />
+                    </>
+                  );
+                })()}
               </div>
             </div>
           ) : (
@@ -747,102 +781,40 @@ export const ApiKeysModal: React.FC<Props> = ({
                   </p>
                 )}
 
-                {/* Search & Gender Filter */}
-                <div className="flex flex-col sm:flex-row gap-2 mb-2.5">
-                  <div className="relative flex-1">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={voiceSearch}
-                      onChange={(e) => setVoiceSearch(e.target.value)}
-                      placeholder="Search voice name, accent, or style..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 shrink-0">
-                    {(['all', 'male', 'female'] as const).map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setVoiceFilter(g)}
-                        className={`px-2.5 py-1 rounded text-[11px] font-semibold capitalize transition ${
-                          voiceFilter === g
-                            ? 'bg-indigo-600 text-white'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {(() => {
+                  const elevenItems: VoicePickerItem[] = fetchedVoices.map((voice) => {
+                    const isPaidOnly = Boolean(
+                      voice.requiresPaidPlan ||
+                        voice.category === 'professional' ||
+                        voice.category === 'high_quality'
+                    );
+                    return {
+                      id: voice.voice_id,
+                      name: voice.name,
+                      gender: normalizeVoiceGender(voice.labels?.gender),
+                      subtitle: `${voice.labels?.accent ? `${voice.labels.accent} • ` : ''}${voice.description || ''}`,
+                      tierBadge: isPaidOnly ? 'paid' : 'free',
+                    };
+                  });
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1.5 border border-slate-800 rounded-xl bg-slate-950/50">
-                  {fetchedVoices
-                    .filter((voice) => {
-                      const g = (voice.labels?.gender || '').toLowerCase();
-                      if (voiceFilter !== 'all' && g !== voiceFilter) return false;
-                      if (voiceSearch.trim()) {
-                        const q = voiceSearch.toLowerCase();
-                        const match =
-                          voice.name?.toLowerCase().includes(q) ||
-                          voice.description?.toLowerCase().includes(q) ||
-                          voice.labels?.accent?.toLowerCase().includes(q);
-                        if (!match) return false;
-                      }
-                      return true;
-                    })
-                    .map((voice) => {
-                      const isSelected = selectedElevenVoiceId === voice.voice_id;
-                      const isPaidOnly = Boolean(
-                        voice.requiresPaidPlan ||
-                          voice.category === 'professional' ||
-                          voice.category === 'high_quality'
-                      );
-                      return (
-                        <button
-                          key={voice.voice_id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedElevenVoiceId(voice.voice_id);
-                            setCustomVoiceId('');
-                            setVoiceTestMessage(null);
-                          }}
-                          className={`text-left p-2.5 rounded-lg border transition ${
-                            isSelected
-                              ? 'bg-indigo-600/20 border-indigo-500 ring-1 ring-indigo-500'
-                              : 'bg-slate-900 border-slate-800/80 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            <span className="font-semibold text-xs text-slate-100 truncate">
-                              {voice.name}
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {isPaidOnly ? (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                  Paid
-                                </span>
-                              ) : (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300">
-                                  Free OK
-                                </span>
-                              )}
-                              {voice.labels?.gender && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 capitalize">
-                                  {voice.labels.gender}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-slate-400 line-clamp-1">
-                            {voice.labels?.accent ? `${voice.labels.accent} • ` : ''}
-                            {voice.description}
-                          </p>
-                        </button>
-                      );
-                    })}
-                </div>
+                  return (
+                    <VoicePickerGrid
+                      items={elevenItems}
+                      selectedId={selectedElevenVoiceId}
+                      onSelect={(item) => {
+                        setSelectedElevenVoiceId(item.id);
+                        setCustomVoiceId('');
+                        setVoiceTestMessage(null);
+                      }}
+                      searchQuery={voiceSearch}
+                      onSearchChange={setVoiceSearch}
+                      genderFilter={voiceFilter}
+                      onGenderFilterChange={setVoiceFilter}
+                      searchPlaceholder="Search voice name, accent, or style..."
+                      maxHeightClass="max-h-64"
+                    />
+                  );
+                })()}
               </div>
 
               {/* Or Custom Voice ID */}

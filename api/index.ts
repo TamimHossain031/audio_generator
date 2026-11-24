@@ -238,6 +238,47 @@ const CURATED_ELEVENLABS_VOICES = [
   { voice_id: 'SAz9YHcvj6GT2YYXdXww', name: 'River', category: 'premade', description: 'Relaxed, neutral, calm informational voice', labels: { accent: 'American', gender: 'neutral' } },
 ];
 
+// Official Google Gemini prebuilt voice genders (16 Male, 14 Female)
+const GEMINI_VOICE_GENDERS: Record<string, 'Male' | 'Female'> = {
+  fenrir: 'Male',
+  puck: 'Male',
+  charon: 'Male',
+  orus: 'Male',
+  enceladus: 'Male',
+  iapetus: 'Male',
+  umbriel: 'Male',
+  algieba: 'Male',
+  algenib: 'Male',
+  rasalgethi: 'Male',
+  alnilam: 'Male',
+  schedar: 'Male',
+  achird: 'Male',
+  zubenelgenubi: 'Male',
+  sadachbia: 'Male',
+  sadaltager: 'Male',
+  kore: 'Female',
+  zephyr: 'Female',
+  leda: 'Female',
+  aoede: 'Female',
+  callirrhoe: 'Female',
+  autonoe: 'Female',
+  despina: 'Female',
+  erinome: 'Female',
+  laomedeia: 'Female',
+  achernar: 'Female',
+  gacrux: 'Female',
+  pulcherrima: 'Female',
+  vindemiatrix: 'Female',
+  sulafat: 'Female',
+};
+
+function normalizeGenderLabel(raw?: string): 'male' | 'female' | 'neutral' {
+  const g = (raw || '').trim().toLowerCase();
+  if (g === 'female' || g === 'woman' || g === 'f') return 'female';
+  if (g === 'male' || g === 'man' || g === 'm') return 'male';
+  return 'neutral';
+}
+
 export function createApiApp(): express.Express {
   const app = express();
   const jsonParser = express.json({ limit: '50mb' });
@@ -298,19 +339,38 @@ export function createApiApp(): express.Express {
       }
 
       const data: any = await response.json();
+      const curatedById = new Map(
+        CURATED_ELEVENLABS_VOICES.map((cv) => [cv.voice_id, cv])
+      );
       const fetchedVoices = Array.isArray(data?.voices)
         ? data.voices
-            .map((v: any) => ({
-              voice_id: v.voice_id,
-              name: v.name,
-              category: v.category || 'premade',
-              description: v.description || v.labels?.description || 'ElevenLabs voice',
-              labels: v.labels || {},
-              preview_url: v.preview_url,
-              requiresPaidPlan:
-                v.category === 'professional' || v.category === 'high_quality',
-            }))
-            .sort((a: any, b: any) => Number(Boolean(a.requiresPaidPlan)) - Number(Boolean(b.requiresPaidPlan)))
+            .map((v: any) => {
+              const curated = curatedById.get(v.voice_id);
+              const rawGender = v.labels?.gender || curated?.labels?.gender;
+              const normalizedGender = normalizeGenderLabel(rawGender);
+              return {
+                voice_id: v.voice_id,
+                name: v.name,
+                category: v.category || 'premade',
+                description:
+                  v.description ||
+                  v.labels?.description ||
+                  curated?.description ||
+                  'ElevenLabs voice',
+                labels: {
+                  ...(curated?.labels || {}),
+                  ...(v.labels || {}),
+                  gender: normalizedGender,
+                },
+                preview_url: v.preview_url,
+                requiresPaidPlan:
+                  v.category === 'professional' || v.category === 'high_quality',
+              };
+            })
+            .sort(
+              (a: any, b: any) =>
+                Number(Boolean(a.requiresPaidPlan)) - Number(Boolean(b.requiresPaidPlan))
+            )
         : CURATED_ELEVENLABS_VOICES;
 
       res.json({
@@ -625,9 +685,12 @@ export function createApiApp(): express.Express {
 
     if (!base64Audio) {
       const candidateKeys = getGoogleKeysPool(googleApiKeys);
+      const resolvedVoiceGender =
+        GEMINI_VOICE_GENDERS[String(voiceName || '').trim().toLowerCase()] ||
+        (gender === 'Female' ? 'Female' : 'Male');
       const effectiveStyle =
         customStylePrompt ||
-        `${gender} speaker, ${style}. Emotion: ${emotion}. Tone: ${tone}. Speed: ${speed}. Pronunciation: ${pronunciation}.`;
+        `${resolvedVoiceGender} speaker, ${style}. Emotion: ${emotion}. Tone: ${tone}. Speed: ${speed}. Pronunciation: ${pronunciation}.`;
 
       if (candidateKeys.length === 0) {
         lastGeminiError =

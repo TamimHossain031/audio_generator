@@ -11,6 +11,7 @@ import {
   FileJson,
 } from 'lucide-react';
 import { VoiceConfig } from '../types';
+import { getGeminiVoiceGender } from '../data/geminiVoices';
 
 interface Props {
   title: string;
@@ -77,11 +78,30 @@ export const Header: React.FC<Props> = ({
 
             {/* Badges */}
             <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
-              <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono">
-                {voiceConfig.provider === 'elevenlabs'
-                  ? `ElevenLabs: ${voiceConfig.elevenLabsVoiceName || 'Adam'}`
-                  : `${voiceConfig.gender} (${voiceConfig.voiceName})`}
-              </span>
+              {(() => {
+                const resolvedGender =
+                  voiceConfig.provider === 'elevenlabs'
+                    ? voiceConfig.gender
+                    : getGeminiVoiceGender(voiceConfig.voiceName, voiceConfig.gender);
+                const isFemale = resolvedGender === 'Female';
+                return (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className={`px-2.5 py-0.5 rounded-md font-mono font-semibold border transition hover:brightness-110 ${
+                      isFemale
+                        ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                        : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                    }`}
+                    title="Click to switch Male or Female voice"
+                  >
+                    {isFemale ? '♀ Female' : '♂ Male'} •{' '}
+                    {voiceConfig.provider === 'elevenlabs'
+                      ? `${voiceConfig.elevenLabsVoiceName || 'Adam'} (ElevenLabs)`
+                      : voiceConfig.voiceName}
+                  </button>
+                );
+              })()}
               <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
                 Bangla + Tech English
               </span>

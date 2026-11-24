@@ -1,4 +1,5 @@
 import { SceneData, VoiceConfig } from '../types';
+import { getGeminiVoiceGender } from '../data/geminiVoices';
 
 export function sanitizeFilename(name: string): string {
   return name
@@ -37,16 +38,22 @@ export function parseAndNormalizeScriptJson(
     if (parsed.title) title = String(parsed.title);
     if (parsed.language) language = String(parsed.language);
     if (parsed.voice && typeof parsed.voice === 'object') {
-      const gender: 'Male' | 'Female' = parsed.voice.gender === 'Female' ? 'Female' : 'Male';
+      const explicitVoiceName =
+        typeof parsed.voice.voiceName === 'string' && parsed.voice.voiceName.trim()
+          ? parsed.voice.voiceName.trim()
+          : undefined;
+      const effectiveVoiceName = explicitVoiceName || fallbackVoiceConfig.voiceName || 'Fenrir';
+      const resolvedGender = getGeminiVoiceGender(
+        effectiveVoiceName,
+        parsed.voice.gender === 'Female' ? 'Female' : fallbackVoiceConfig.gender || 'Male'
+      );
       voiceConfig = {
-        gender,
+        gender: resolvedGender,
         style: parsed.voice.style || fallbackVoiceConfig.style,
         tone: parsed.voice.tone || fallbackVoiceConfig.tone,
         speed: parsed.voice.speed || fallbackVoiceConfig.speed,
         pronunciation: parsed.voice.pronunciation || fallbackVoiceConfig.pronunciation,
-        voiceName:
-          parsed.voice.voiceName ||
-          (gender === 'Female' ? 'Kore' : fallbackVoiceConfig.voiceName || 'Fenrir'),
+        voiceName: effectiveVoiceName,
       };
     }
   } else {
